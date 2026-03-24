@@ -1,0 +1,26 @@
+flowchart TD
+    A[Training Dataset] --> B[Feature Validation]
+    B --> C[Model Training Pipeline]
+
+    C --> C1[Baseline Regressor]
+    C --> C2[Two Stage Model]
+    C --> C3[Ensemble Model]
+
+    C1 --> D[Model Evaluation]
+    C2 --> D
+    C3 --> D
+
+    D --> E{Performance Gate}
+    E -->|Pass| F[Model Registry]
+    E -->|Fail| B
+
+    F --> G[Batch Inference]
+    F --> H[Online Inference]
+
+    G --> I[Predicted Price]
+    H --> I
+
+    I --> J[Residual/Error Analysis]
+    J --> K[Derived ML Signals]
+    K --> L[Feedback to Data Layer]
+    L --> A

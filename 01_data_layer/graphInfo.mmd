@@ -1,0 +1,37 @@
+flowchart TD
+    A[Raw Sources] --> A1[data.gov.sg HDB]
+    A --> A2[Google Maps POI]
+    A --> A3[MOE/School Admission Proxy]
+
+    A1 --> B[Ingestion Pipelines]
+    A2 --> B
+    A3 --> B
+
+    B --> C[Staging Tables]
+    C --> D[Data Quality Checks]
+    D --> E[Geo Feature Builder]
+
+    E --> E1[Distance to MRT]
+    E --> E2[Distance to Foodcourt]
+    E --> E3[Mall Count and Size Score]
+    E --> E4[Distance to Schools]
+    E --> E5[School Tier Score in 1km]
+
+    C --> F[Core Property Features]
+    F --> F1[Level]
+    F --> F2[Lease Remaining]
+    F --> F3[Floor Area]
+    F --> F4[Room Count]
+
+    E1 --> G[Feature Join]
+    E2 --> G
+    E3 --> G
+    E4 --> G
+    E5 --> G
+    F1 --> G
+    F2 --> G
+    F3 --> G
+    F4 --> G
+
+    G --> H[Training Dataset]
+    G --> I[Scoring Dataset]
