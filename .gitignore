@@ -1,7 +1,11 @@
 01_data_layer/raw/
+01_data_layer/raw
 02_feature_layer/training/outputs/
+02_feature_layer/training/outputs
 03_ml_layer/training/outputs/
+03_ml_layer/training/outputs
 03_ml_layer/test/outputs/
+03_ml_layer/test/outputs
 .DS_Store
 .ipynb_checkpoints/
 .env/
