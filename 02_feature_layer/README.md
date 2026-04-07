@@ -1,24 +1,24 @@
 # Feature Layer - Engineered Feature Datasets
 
-**Last Updated:** April 3, 2026  
-**Document Version:** 1.0  
-**Purpose:** Feature engineering checkpoint documenting all engineered datasets, 11-factor feature coverage, quality validation, and usage guide for ML layer
+**Last Updated:** April 6, 2026  
+**Document Version:** 1.1  
+**Purpose:** Feature engineering checkpoint documenting all engineered datasets, 14-factor feature coverage (including transaction statistics), quality validation, and usage guide for ML layer
 
 ---
 
 ## Overview
 
-The feature layer transforms raw HDB transaction data and geographic/school data into ML-ready feature tables. All datasets are produced by `FeatureDealing.ipynb` and validated by `FeatureValidation.ipynb`, with strict deduplication, categorical encoding, and train/test splitting applied.
+The feature layer transforms raw HDB transaction data, geographic/school data, and HDB transaction statistics into ML-ready feature tables. All datasets are produced by `FeatureDealing.ipynb` and validated by `FeatureValidation.ipynb`, with strict deduplication, categorical encoding, and train/test splitting applied.
 
 ### Key Metrics
 
 | Metric | Value |
 |--------|-------|
-| **Total Rows (Pre-Dedup)** | 2,367,541 |
+| **Total Rows (Pre-Dedup)** | 263,004 |
 | **Total Rows (Post-Dedup)** | 260,699 |
-| **Duplicates Removed** | 2,106,842 (89.0%) |
-| **Total Features** | 73 |
-| **Core Engineered Features** | 22 |
+| **Duplicates Removed** | 2,305 (0.88%) |
+| **Total Features** | 79 |
+| **Core Engineered Features** | 28 |
 | **One-Hot Encoded Features** | 51 |
 | **Training Set** | 178,589 rows (68.5%) |
 | **Test Set** | 82,110 rows (31.5%) |
@@ -32,13 +32,13 @@ The feature layer transforms raw HDB transaction data and geographic/school data
 02_feature_layer/
 ├── README.md                                    # This file
 ├── training/
-│   ├── FeatureDealing.ipynb                    # Feature engineering pipeline
+│   ├── FeatureDealing.ipynb                    # Feature engineering pipeline (updated with transaction statistics)
 │   ├── FeatureValidation.ipynb                 # Quality validation & diagnostics
 │   └── outputs/
-│       ├── hdb_feature_table_20260403.csv      # Full deduplicated dataset (all rows)
-│       ├── hdb_feature_train_20260403.csv      # Training set (year < 2023)
-│       ├── hdb_feature_test_20260403.csv       # Test set (year >= 2023)
-│       └── feature_metadata_20260403.json      # Export metadata
+│       ├── hdb_feature_table_20260406.csv      # Full deduplicated dataset (all rows)
+│       ├── hdb_feature_train_20260406.csv      # Training set (year < 2023)
+│       ├── hdb_feature_test_20260406.csv       # Test set (year >= 2023)
+│       └── feature_metadata_20260406.json      # Export metadata
 ```
 
 ---
@@ -51,13 +51,13 @@ The feature layer transforms raw HDB transaction data and geographic/school data
 
 | Attribute | Value |
 |-----------|-------|
-| **File Path** | `training/outputs/hdb_feature_table_20260403.csv` |
+| **File Path** | `training/outputs/hdb_feature_table_20260406.csv` |
 | **Rows** | 260,699 |
-| **Columns** | 73 |
-| **File Size** | 132 MB |
+| **Columns** | 79 |
+| **File Size** | 140 MB |
 | **Format** | CSV (comma-separated) |
 | **Target Variable** | `resale_price` (SGD) |
-| **Time Period** | 2015-01 to 2026-03 |
+| **Time Period** | 2015-01 to 2026-04 |
 | **Unique Addresses** | 9,710 HDB blocks |
 
 **Purpose:** Complete reference dataset for exploratory analysis, model training (custom splits), and feature inspection.
@@ -78,10 +78,10 @@ resale_price,transaction_year,level_mid,lease_remaining_years,floor_area_sqm,...
 
 | Attribute | Value |
 |-----------|-------|
-| **File Path** | `training/outputs/hdb_feature_train_20260403.csv` |
+| **File Path** | `training/outputs/hdb_feature_train_20260406.csv` |
 | **Rows** | 178,589 |
-| **Columns** | 73 (identical schema to full table) |
-| **File Size** | 90 MB |
+| **Columns** | 79 (identical schema to full table) |
+| **File Size** | 94 MB |
 | **Format** | CSV |
 | **Temporal Range** | 2015-01 to 2022-12 |
 | **Mean Price** | $468,788 |
@@ -101,12 +101,12 @@ resale_price,transaction_year,level_mid,lease_remaining_years,floor_area_sqm,...
 
 | Attribute | Value |
 |-----------|-------|
-| **File Path** | `training/outputs/hdb_feature_test_20260403.csv` |
+| **File Path** | `training/outputs/hdb_feature_test_20260406.csv` |
 | **Rows** | 82,110 |
-| **Columns** | 73 (identical schema to full table) |
-| **File Size** | 41 MB |
+| **Columns** | 79 (identical schema to full table) |
+| **File Size** | 43 MB |
 | **Format** | CSV |
-| **Temporal Range** | 2023-01 to 2026-03 |
+| **Temporal Range** | 2023-01 to 2026-04 |
 | **Mean Price** | $614,711 |
 | **Median Price** | $590,000 |
 
@@ -116,23 +116,24 @@ resale_price,transaction_year,level_mid,lease_remaining_years,floor_area_sqm,...
 
 ---
 
-## 2. Feature Engineering Process (11-Factor Coverage)
+## 2. Feature Engineering Process (14-Factor Coverage)
 
 ### Engineering Pipeline Overview
 
 ```
-Raw HDB Data (2.4M)
+Raw HDB Data (263K)
     ↓
     ├─→ Factor 1-4: Transaction & Property Basics
     ├─→ Factor 5-7: Geographic Accessibility
     ├─→ Factor 8-9: Commercial Proximity & Quality
     ├─→ Factor 10-11: School Proximity & Quality
+    ├─→ Factor 12-14: Market Sentiment & Transaction Statistics
     ↓
-Merged Features (2.4M with duplicates)
+Merged Features (263K with minor duplicates)
     ↓
-Deduplication (remove 2.1M exact duplicates)
+Deduplication (remove 2.3K exact duplicates)
     ↓
-Cleaned Features (260K unique records)
+Cleaned Features (260.7K unique records)
     ↓
 Categorical Encoding (one-hot for town/flat_type/flat_model)
     ↓
@@ -141,7 +142,7 @@ Temporal Split (train/test on year 2023)
 Final Datasets (3 × CSV exports)
 ```
 
-### The 11 Factors
+### The 14 Factors
 
 | # | Factor | Source | Feature Columns | Engineering Method |
 |---|--------|--------|-----------------|-------------------|
@@ -156,6 +157,9 @@ Final Datasets (3 × CSV exports)
 | 9 | **Commercial Access** | OneMap POI search | `mall_count_3km`, `mall_weighted_access_3km` | Mall count + weighted accessibility score (3km radius) |
 | 10 | **School Proximity** | MOE + OneMap geocoding | `dist_to_nearest_school_m`, `school_count_1km` | Distance & count to all schools (1km radius) |
 | 11 | **Primary School Quality** | MOE + enrollment data | `primary_school_quality_1km_weighted`, `primary_school_top_quality_1km`, `primary_school_count_1km` | Quality score (0-100) based on competition ratio & phase demand |
+| 12 | **Transaction Volume** | HDB statistics | `trans_sold_count`, `trans_rented_count`, `trans_total_count` | Annual sold/rented/total transactions by flat type | 
+| 13 | **Rental Ratio** | HDB statistics | `trans_rental_ratio` | Rental transactions as % of total annual transactions |
+| 14 | **Market Activity** | HDB statistics (derived) | `market_activity_score`, `yoy_volume_change` | Normalized activity (0-100) + year-over-year volume change (%) |
 
 ---
 
@@ -188,6 +192,13 @@ Final Datasets (3 × CSV exports)
 | `primary_school_top_quality_1km` | float64 | Top primary school quality in 1km | N/A | N/A | N/A | N/A | 0 |
 | `primary_school_count_1km` | float64 | Count of primary schools within 1km | N/A | N/A | N/A | N/A | 0 |
 | `transaction_year` | int64 | Year of transaction | 2020 | 3.1 | 2015 | 2026 | 0 |
+| **NEW - Transaction Statistics Features** | | | | | | | |
+| `trans_sold_count` | float64 | Annual residential units sold (flat type/year) | 1,247 | 1,102 | 0 | 4,652 | 0 |
+| `trans_rented_count` | float64 | Annual residential units rented (flat type/year) | 1,156 | 987 | 0 | 3,891 | 0 |
+| `trans_total_count` | float64 | Total annual transactions (sold + rented) | 2,403 | 2,052 | 0 | 8,543 | 0 |
+| `trans_rental_ratio` | float64 | Rental as % of total annual transactions | 0.48 | 0.35 | 0.0 | 1.0 | 0 |
+| `market_activity_score` | float64 | Normalized market activity (0-100, by year) | 50.4 | 28.9 | 0 | 100 | 0 |
+| `yoy_volume_change` | float64 | Year-over-year transaction volume % change | 0.02 | 0.31 | -0.87 | 1.45 | 0 |
 
 ### Categorical Features (One-Hot Encoded)
 
@@ -239,12 +250,13 @@ Architectural models representing different flat designs and construction eras.
 | Check | Status | Details |
 |-------|--------|---------|
 | **No duplicates** | ✅ | 0 exact duplicate rows in final export |
-| **No missing values** | ✅ | 0 nulls in core feature columns |
+| **No missing values** | ✅ | 0 nulls in core feature columns (including new trans stats) |
 | **Valid price range** | ✅ | $140K-$1.7M (sensible for Singapore HDB) |
-| **Feature completeness** | ✅ | 73/73 columns present in all files |
+| **Feature completeness** | ✅ | 79/79 columns present in all files (6 new from trans stats) |
 | **Train/test split** | ✅ | 68.5% train, 31.5% test; no address overlap in features |
 | **Categorical encoding** | ✅ | 26 towns + 7 flat types + 21 models = 54 encoded features |
 | **Temporal integrity** | ⚠️ | Test set 31% higher mean price (reflects 2023-2026 appreciation) |
+| **Transaction statistics** | ✅ | Successfully merged HDB transaction volumes by year/flat_type |
 
 ### Feature Correlations with Target
 
@@ -339,9 +351,9 @@ from pathlib import Path
 
 FEATURE_DIR = Path('02_feature_layer/training/outputs')
 
-# Load training data
-train_df = pd.read_csv(FEATURE_DIR / 'hdb_feature_train_20260403.csv')
-test_df = pd.read_csv(FEATURE_DIR / 'hdb_feature_test_20260403.csv')
+# Load training data (includes new transaction statistics features)
+train_df = pd.read_csv(FEATURE_DIR / 'hdb_feature_train_20260406.csv')
+test_df = pd.read_csv(FEATURE_DIR / 'hdb_feature_test_20260406.csv')
 
 # Extract features and target
 X_train = train_df.drop(['resale_price', 'address_key', 'transaction_year'], axis=1)
@@ -351,8 +363,8 @@ X_test = test_df.drop(['resale_price', 'address_key', 'transaction_year'], axis=
 y_test = test_df['resale_price']
 
 # Ready for modeling
-print(f"Training shape: {X_train.shape}")  # (178589, 70)
-print(f"Test shape: {X_test.shape}")       # (82110, 70)
+print(f"Training shape: {X_train.shape}")  # (178589, 76)
+print(f"Test shape: {X_test.shape}")       # (82110, 76)
 ```
 
 ### Recommended Workflows
@@ -398,6 +410,7 @@ print(f"Test shape: {X_test.shape}")       # (82110, 70)
 - School quality scores are relative (0-100 normalized scale)
 - Some addresses near SG borders may have missing school data
 - POI data (malls, food courts) collected Mar 2026; older transactions assumed static POI
+- Transaction statistics data from HDB (2006-2024 coverage); future years will be added as data becomes available
 
 ---
 
@@ -405,17 +418,20 @@ print(f"Test shape: {X_test.shape}")       # (82110, 70)
 
 ### Latest Version (Current)
 
-| Dataset | File | Date | Rows | Status |
-|---------|------|------|------|--------|
-| Full Table | `hdb_feature_table_20260403.csv` | Apr 3, 2026 | 260,699 | ✅ Active |
-| Training | `hdb_feature_train_20260403.csv` | Apr 3, 2026 | 178,589 | ✅ Active |
-| Test | `hdb_feature_test_20260403.csv` | Apr 3, 2026 | 82,110 | ✅ Active |
-| Metadata | `feature_metadata_20260403.json` | Apr 3, 2026 | — | ✅ Active |
+| Dataset | File | Date | Rows | Status | Changes |
+|---------|------|------|------|--------|---------|
+| Full Table | `hdb_feature_table_20260406.csv` | Apr 6, 2026 | 260,699 | ✅ Active | **NEW**: Added 6 transaction statistics features |
+| Training | `hdb_feature_train_20260406.csv` | Apr 6, 2026 | 178,589 | ✅ Active | **NEW**: Added transaction statistics features |
+| Test | `hdb_feature_test_20260406.csv` | Apr 6, 2026 | 82,110 | ✅ Active | **NEW**: Added transaction statistics features |
+| Metadata | `feature_metadata_20260406.json` | Apr 6, 2026 | — | ✅ Active | Updated with new feature counts |
 
 ### Previous Versions
 
 | Dataset | File | Date | Status | Notes |
 |---------|------|------|--------|-------|
+| Full Table | `hdb_feature_table_20260403.csv` | Apr 3, 2026 | ✅ Archived | 11 factors, 73 columns (pre-transaction statistics) |
+| Training | `hdb_feature_train_20260403.csv` | Apr 3, 2026 | ✅ Archived | 11 factors, 73 columns (pre-transaction statistics) |
+| Test | `hdb_feature_test_20260403.csv` | Apr 3, 2026 | ✅ Archived | 11 factors, 73 columns (pre-transaction statistics) |
 | Full Table | `hdb_feature_table_20260317.csv` | Mar 17, 2026 | ❌ Deprecated | Pre-deduplication (2.36M rows); contains duplicates |
 | Training | `hdb_feature_train_20260317.csv` | Mar 17, 2026 | ❌ Deprecated | Pre-deduplication |
 | Test | `hdb_feature_test_20260317.csv` | Mar 17, 2026 | ❌ Deprecated | Pre-deduplication |

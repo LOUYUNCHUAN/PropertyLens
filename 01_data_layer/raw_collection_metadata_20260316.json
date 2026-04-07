@@ -1,0 +1,39 @@
+{
+  "run_timestamp_utc": "2026-03-16T05:49:17.644109",
+  "project_root": "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens",
+  "inputs": {
+    "hdb_files": [
+      "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw/ResaleFlatPrices/Resale Flat Prices (Based on Registration Date), From Jan 2015 to Dec 2016.csv",
+      "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw/ResaleFlatPrices/Resale Flat Prices (Based on Registration Date), From Mar 2012 to Dec 2014.csv",
+      "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw/ResaleFlatPrices/Resale flat prices based on registration date from Jan-2017 onwards.csv"
+    ],
+    "hdb_rows_total": 315627,
+    "hdb_rows_2015_plus": 263424,
+    "address_count_2015_plus": 9710
+  },
+  "public_sources": {
+    "one_map": {
+      "api_key_present": true,
+      "geocode_rows": 9710,
+      "geocode_audit_rows": 9710,
+      "transit_nodes_rows": 129
+    },
+    "data_gov_sg": {
+      "api_key_present": false,
+      "moe_school_rows": 0,
+      "nea_hawker_rows": 0
+    },
+    "lta_datamall": {
+      "api_key_present": false,
+      "bus_stop_rows": 0
+    }
+  },
+  "output_files": [
+    "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw/google_geo/onemap_hdb_geocode_2015plus_20260316.csv",
+    "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw/google_geo/onemap_transit_nodes_20260316.csv",
+    "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw/google_geo/nea_hawker_centres_20260316.csv",
+    "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw/google_geo/datamall_bus_stops_20260316.csv",
+    "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw/schools/moe_general_information_of_schools_20260316.csv",
+    "/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw/logs/public_data_audit_20260316.csv"
+  ]
+}
