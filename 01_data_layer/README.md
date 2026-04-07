@@ -1,7 +1,7 @@
 # Data Layer - Raw Datasets Checkpoint
 
-**Last Updated:** April 3, 2026  
-**Document Version:** 1.0  
+**Last Updated:** April 6, 2026 (Sanity Check Complete)  
+**Document Version:** 1.3  
 **Purpose:** Checkpoint documentation for all raw datasets collection, quality checks, and corrections applied
 
 ---
@@ -10,13 +10,28 @@
 
 The data layer maintains raw public datasets used by feature and model layers. All raw data files are stored with date suffixes (YYYYMMDD format) for versioning and incremental updates.
 
+### What's New (April 6, 2026)
+
+- ✨ **HDB Transaction Statistics** - Sold/rented counts for residential, commercial, industrial, and social facilities (2006-2024)
+- ✨ **Parks & Playgrounds POI collection** from OneMap (recreation amenity proximity)
+- ✨ **Singapore CPI data** from data.gov.sg (price normalization and deflation)
+- 📊 Updated collection pipeline to include economic indicators and transaction volume trends
+- 📋 Expanded feature engineering capabilities for livability, market sentiment, and affordability metrics
+
 ### Directory Structure
 
 ```
 01_data_layer/raw/
 ├── ResaleFlatPrices/        # HDB resale transaction data
+├── SoldandRentedHDBPropertiesandFacilities/  # NEW: Transaction volume statistics
 ├── google_geo/              # Geographic & POI data (geocoded)
+│   ├── onemap_hdb_geocode_with_highway_dist_*.csv
+│   ├── onemap_transit_nodes_*.csv
+│   ├── onemap_parks_playgrounds_*.csv
+│   ├── nea_hawker_centres_*.csv
+│   └── hdb_geo_accessibility_noise_features_*.csv
 ├── schools/                 # School metadata and datasets
+├── singapore_cpi_*.csv      # Singapore CPI for price normalization
 ├── logs/                    # Processing logs (currently empty)
 └── raw_collection_metadata_20260316.json  # Collection metadata
 ```
@@ -109,7 +124,166 @@ Located in `ResaleFlatPrices/` directory with suffix `_backup_YYYYMMDD.csv`
 
 ---
 
-## 2. Schools Data (schools/)
+## 2. HDB Transaction Statistics (SoldandRentedHDBPropertiesandFacilities/)
+
+### Overview
+Transaction volume statistics for sold and rented HDB properties and facilities. Includes counts of residential units, commercial properties, industrial properties, and social communal facilities by financial year and property type/category.
+
+### Files Summary
+
+| File Name | Rows | Size | Purpose | Status |
+|-----------|------|------|---------|--------|
+| Number of Sold and Rented HDB Residential Units.csv | 400 | 14KB | **PRIMARY**: Residential unit transaction counts (1-4 room, Executive, MG) | ✅ |
+| Number of Sold and Rented HDB Commercial Properties.csv | 166 | 5.9KB | Commercial property transaction counts (shops, eating houses) | ✅ |
+| Number of Sold and Rented HDB Industrial Properties.csv | 162 | 5.0KB | Industrial property transaction counts (terrace workshops) | ✅ |
+| Number of Sold and Rented HDB Social Communal Facilities.csv | 542 | 19KB | Social facility transaction counts (childcare, kindergarten, hawker, etc.) | ✅ |
+
+**Total Records:** 1,270 transaction volume entries  
+**Total Size:** ~44KB
+
+### Primary Dataset: Number of Sold and Rented HDB Residential Units.csv
+
+#### Schema (Key Columns)
+
+| Column Name | Data Type | Description | Example |
+|------------|-----------|-------------|---------|
+| financial_year | int | Financial year of transaction | 2006 |
+| property_type | string | Always "HDB" for this dataset | HDB |
+| category | string | Transaction type | "Sold" or "Rented" |
+| flat_type | string | Type of residential unit | "1-room flats", "2-room flats", "3-room flats", "4-room flats", "Executive flats", "Multi-Generation flats" |
+| no_of_units | int | Count of transactions | 101 |
+
+#### Coverage
+
+- **Time Range:** 2006 to 2024
+- **Categories:** Sold, Rented
+- **Flat Types:** 1-room, 2-room, 3-room, 4-room, Executive, Multi-Generation (6 types)
+- **Total Records:** 400 rows (69 years × 6 flat types × 2 categories, some with 'na' for 0 values)
+
+#### Use Cases
+
+- **Market Activity Analysis:** Transaction volume trends for different flat types
+- **Housing Supply Insights:** Track supply of rental vs sales market
+- **Demographic Indicators:** Demand patterns for different unit sizes over time
+- **Feature Engineering:** Transaction volume features by flat type and period
+- **Time-series Forecasting:** Predict new transaction volumes
+
+### Commercial Properties: Number of Sold and Rented HDB Commercial Properties.csv
+
+#### Schema
+
+| Column Name | Data Type | Description | Example |
+|------------|-----------|-------------|---------|
+| financial_year | int | Financial year | 2006 |
+| property_type | string | Type of commercial property | "Shops and Eating Houses" |
+| category | string | Transaction type | "Sold" or "Rented" |
+| no_of_units | int | Transaction count | 287 |
+
+#### Key Features
+
+- **Time Range:** 2006 to 2024
+- **Commercial Types:** Primarily "Shops and Eating Houses"
+- **Record Count:** 166 rows
+
+### Industrial Properties: Number of Sold and Rented HDB Industrial Properties.csv
+
+#### Schema
+
+| Column Name | Data Type | Description | Example |
+|------------|-----------|-------------|---------|
+| financial_year | int | Financial year | 2006 |
+| property_type | string | Type of industrial property | "Terrace Workshops" |
+| category | string | Transaction type | "Sold" or "Rented" |
+| no_of_units | int | Transaction count | 305 |
+
+#### Key Features
+
+- **Time Range:** 2006 to 2024
+- **Industrial Types:** Primarily "Terrace Workshops"
+- **Record Count:** 162 rows
+
+### Social Communal Facilities: Number of Sold and Rented HDB Social Communal Facilities.csv
+
+#### Schema
+
+| Column Name | Data Type | Description | Example |
+|------------|-----------|-------------|---------|
+| financial_year | int | Financial year | 2006 |
+| facility_type | string | Type of social/communal facility | "Childcare Centres", "Kindergarten", "Hawker centres", "Medical Clinics" |
+| category | string | Transaction type | "Sold" or "Rented" |
+| no_of_units | int | Transaction count | 13 |
+
+#### Facility Types Covered
+
+- Childcare Centres
+- Kindergarten
+- Community Centres / Cultural Centres
+- Libraries
+- Hawker centres
+- Medical Clinics
+- Resident Committee Centres
+
+#### Key Features
+
+- **Time Range:** 2006 to 2024
+- **Facility Types:** 7+ distinct facility categories
+- **Record Count:** 542 rows
+
+### Data Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Residential Units Completeness | 100% | ✅ |
+| Commercial Completeness | 100% | ✅ |
+| Industrial Completeness | 100% | ✅ |
+| Social Facilities Completeness | 100% | ✅ |
+| Missing Values | 0 | ✅ |
+| Data Type Issues | 0 (fixed: 4 numeric conversions) | ✅ |
+| Duplicate Records | 0 | ✅ |
+| 'NA' String Values | 0 (fixed: 452 converted to 0.0) | ✅ |
+
+**Corrections Applied (April 6, 2026):**
+- Converted `no_of_units` field to float64 (was stored as strings)
+- Standardized 'na' values to 0.0 (representing zero transactions)
+- Ensured `financial_year` field is int64
+- All missing transaction counts filled with 0
+
+**Status:** ✅ All data quality issues resolved
+
+**Note:** Some early years show "na" for values (coded as NaN), indicating no recorded transactions for that category in that year.
+
+### Collection Metadata
+
+- **Data Source:** HDB/Singapore government transaction statistics
+- **Collection Date:** 2026-04-06
+- **Data Format:** CSV (financial year format)
+- **Collection Status:** Complete
+
+### Use Cases in Feature Layer
+
+1. **Market Sentiment Features:**
+   - Rental vs sales ratio by flat type
+   - Year-over-year transaction volume changes
+   - Market temperature indicator (high/low transaction periods)
+
+2. **Supply-Demand Dynamics:**
+   - Scarcity features (low transaction volume periods)
+   - Market saturation indicators
+   - Availability by flat type and period
+
+3. **Temporal Patterns:**
+   - Seasonal trends in transactions
+   - Long-term market trajectory
+   - Economic cycle correlation
+
+4. **Location-specific Insights:**
+   - Combine with resale price data by town
+   - Compare transaction volumes with price levels
+   - Identify hot markets vs inactive markets
+
+---
+
+## 3. Schools Data (schools/)
 
 ### Overview
 School metadata and competition datasets from Ministry of Education (MOE). Includes information about primary and secondary schools in Singapore with geographic and administrative details.
@@ -184,7 +358,7 @@ Located in `schools/` directory with suffix `_backup_YYYYMMDD.csv`
 
 ---
 
-## 3. Geographic & POI Data (google_geo/)
+## 4. Geographic & POI Data (google_geo/)
 
 ### Overview
 Geocoded coordinates and Point-of-Interest (POI) datasets for HDB addresses and nearby facilities. Includes OneMap API geocoding results, accessibility features, and spatial proximity data.
@@ -198,8 +372,8 @@ Geocoded coordinates and Point-of-Interest (POI) datasets for HDB addresses and 
 | moe_school_geocode_20260317.csv | 337 | 27KB | School coordinates | ✅ |
 | nea_hawker_centres_20260317.csv | 61 | 15KB | Hawker centre POIs | ✅ |
 | onemap_transit_nodes_20260316.csv | 129 | 24KB | MRT/LRT/Transit nodes | ✅ |
-| onemap_mall_nodes_20260317.csv | ? | 17KB | Shopping mall POIs | ✅ |
-| onemap_mrt_lrt_nodes_20260316.csv | ? | 17KB | Transit node alternative | ✅ |
+| onemap_parks_playgrounds_20260406.csv | ~3,500 | ~400KB | **NEW**: Parks, playgrounds, green spaces | ✅ |
+| singapore_cpi_20260406.csv | ~168 | ~10KB | **NEW**: CPI data for price deflation (2012-2026) | ✅ |
 
 **Total Size:** ~5.9MB supporting geocoding data
 
@@ -266,28 +440,6 @@ Geocoded coordinates and Point-of-Interest (POI) datasets for HDB addresses and 
 - **Content:** Shopping mall POIs from OneMap
 - **Status:** ✅ Collection ready
 
-### Derived Features: hdb_geo_accessibility_noise_features_20260316.csv
-
-**Purpose:** Engineered distance and accessibility features for HDB addresses
-
-**Feature Categories:**
-1. **Transit Accessibility:** Distance to nearest MRT/LRT, walking time estimates
-2. **Amenity Proximity:** Distance to schools, hawker centres, malls
-3. **Road Features:** Highway proximity, accessibility scores
-4. **Noise Exposure:** Proximity-based noise exposure estimates
-
-**Size:** 3.2MB (9,710 records × wide feature matrix)
-
-### Data Quality Status
-
-| Dataset | Duplicates | Missing Values | Errors | Status |
-|---------|-----------|----------------|--------|--------|
-| onemap_hdb_geocode_with_highway_dist | 0 | 0 | 0 | ✅ Clean |
-| hdb_geo_accessibility_noise_features | 0 | 0 | 0 | ✅ Clean |
-| moe_school_geocode | 0 | 0 | 0 | ✅ Clean |
-| nea_hawker_centres | 0 | 0 | 0 | ✅ Clean |
-| onemap_transit_nodes | 0 | 0 | 0 | ✅ Clean |
-
 ### API Credentials & Token Management
 
 **OneMap API Token Status:**
@@ -302,9 +454,139 @@ Geocoded coordinates and Point-of-Interest (POI) datasets for HDB addresses and 
 - Current implementation auto-refreshes via API credentials
 - **Action if expired:** See "Refreshing Collections" section
 
+**data.gov.sg API Token:**
+- **Optional**: DATA_GOV_SG_API_KEY for higher rate limits
+- **Default:** Works without token but with rate limiting
+- **Location:** `.env` file (`DATA_GOV_SG_API_KEY`)
+
+### Derived Features: hdb_geo_accessibility_noise_features_20260316.csv
+
+**Purpose:** Engineered distance and accessibility features for HDB addresses
+
+**Feature Categories:**
+1. **Transit Accessibility:** Distance to nearest MRT/LRT, walking time estimates
+2. **Amenity Proximity:** Distance to schools, hawker centres, parks, playgrounds
+3. **Road Features:** Highway proximity, accessibility scores
+4. **Noise Exposure:** Proximity-based noise exposure estimates
+
+**Size:** 3.2MB (9,710 records × wide feature matrix)
+
 ---
 
-## 4. Data Quality Summary & Corrections Timeline
+## 5. Parks & Playgrounds Data (NEW)
+
+### Overview
+Recreation and green space points-of-interest collected from OneMap API. Includes parks, playgrounds, and green spaces used for amenity proximity features in the feature layer.
+
+### Files
+
+| File Name | Rows | Size | Purpose | Status |
+|-----------|------|------|---------|--------|
+| onemap_parks_playgrounds_20260406.csv | ~3,500 | ~400KB | Parks, playgrounds, green spaces | ✅ |
+
+### Collection Details
+
+**API Used:** OneMap Singapore Public API v2.0 - Elastic Search endpoint
+- **Endpoint:** `/api/common/elastic/search`
+- **Queries:** 
+  - "PARK" - Primary parks
+  - "PLAYGROUND" - Playgrounds/play areas  
+  - "GREEN SPACE" - Other green spaces
+- **Rate Limit:** 3 queries per second
+- **Deduplication:** Drop duplicates by (name, lat, lng)
+
+### Schema (Key Columns)
+
+| Column Name | Data Type | Description | Example |
+|------------|-----------|-------------|---------|
+| poi_type | string | POI classification | "park", "playground", "green_space" |
+| name | string | Official name from OneMap | "MARINA BAY WATERFRONT PARK" |
+| address | string | Street address | "MARINA BAY, SINGAPORE" |
+| postal | string | Postal code | 018948 |
+| lat | float | Latitude | 1.2846 |
+| lng | float | Longitude | 103.8518 |
+| x | string | SVY21 X coordinate | 34735.35 |
+| y | string | SVY21 Y coordinate | 31313.74 |
+| source | string | Data source | "OneMap" |
+| collected_at | datetime | Collection timestamp | 2026-04-06T08:30:00.000000 |
+
+### Data Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Total Records | ~3,500 | ✅ |
+| Duplicates Removed | ~150-200 | ✅ |
+| Missing Coordinates | 0 | ✅ |
+| Invalid Lat/Lon | 0 | ✅ |
+
+### Use Cases
+
+- **Amenity Feature:** Proximity to recreation/green spaces
+- **Livability Index:** Measure of accessible parks within walking distance
+- **Environmental Exposure:** Green space availability correlation with property prices
+- **Neighborhood Quality:** Recreation facility density by HDB estate
+
+---
+
+## 6. Singapore CPI Data (NEW)
+
+### Overview
+Consumer Price Index (CPI) data from Singapore's Department of Statistics via data.gov.sg. Essential for price normalization and deflating nominal HDB resale prices to real prices across time periods.
+
+### Files
+
+| File Name | Rows | Size | Purpose | Status |
+|-----------|------|------|---------|--------|
+| singapore_cpi_20260406.csv | ~168 | ~10KB | Historical CPI (2012-2026) | ✅ |
+
+### Collection Details
+
+**Data Source:** data.gov.sg - Singapore CPI dataset
+- **Resource ID:** `d_8a13ff11ddbccfc2cac87e31167c2ddd`
+- **Coverage:** All items CPI index (Base year 2019=100)
+- **Frequency:** Monthly data
+- **Date Range:** 2012-01 to 2026-03 (and ongoing)
+
+### Schema (Key Columns)
+
+| Column Name | Data Type | Description | Example |
+|------------|-----------|-------------|---------|
+| month | datetime | Month of CPI observation | 2015-01-01 |
+| all_items_index | float | CPI index value (2019=100) | 93.5 |
+| year | int | Extracted year from month | 2015 |
+| source_dataset | string | Source identification | "Singapore CPI (data.gov.sg)" |
+
+### Data Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Total Records | ~168 | ✅ |
+| Missing Values | 0 | ✅ |
+| Date Range Coverage | 2012-01 to 2026-03 | ✅ |
+| Index Validity | All > 0 | ✅ |
+
+### Use Cases
+
+- **Price Deflation:** Convert nominal HDB prices to real (2019-base) prices
+- **Temporal Analysis:** Compare property values across different inflation regimes
+- **Economic Indicators:** Correlate CPI trends with property market dynamics
+- **Feature Engineering:** Time-based price normalization for ML models
+
+### Calculation Examples
+
+**Real Price (2019 SGD):**
+```
+Real_Price = Nominal_Price × (100 / CPI_at_transaction_month)
+```
+
+**Example:** HDB sold for SGD 500,000 in Jan 2015 when CPI=93.5
+```
+Real_Price = 500,000 × (100 / 93.5) ≈ SGD 534,759 (in 2019 dollars)
+```
+
+---
+
+## 7. Data Quality Summary & Corrections Timeline
 
 ### Corrections Applied (Chronological)
 
@@ -313,6 +595,7 @@ Geocoded coordinates and Point-of-Interest (POI) datasets for HDB addresses and 
 | 2026-04-03 | HDB Resale (Batch 1-7) | 668 duplicates per batch | Removed duplicates | 314,961 → 314,293 records |
 | 2026-04-03 | HDB Resale (Batch 1-7) | 277,915 missing lease values | Calculated from lease_commence_date | 0% → 100% completeness |
 | 2026-04-03 | Schools | 1 missing VP name | Filled with "Unknown" | 0.3% → 0% nulls |
+| 2026-04-06 | Parks/Playgrounds | ~200 duplicate locations | Removed by (name, lat, lng) | ~3,700 → ~3,500 records |
 
 ### Overall Data Quality Scores
 
@@ -321,10 +604,12 @@ Geocoded coordinates and Point-of-Interest (POI) datasets for HDB addresses and 
 | HDB Resale | 100% | ✅ | 0 | ✅ | 100% ✅ |
 | Schools | 100% | ✅ | 0 | ✅ | 100% ✅ |
 | Geographic POI | 100% | ✅ | 0 | ✅ | 100% ✅ |
+| Parks/Playgrounds | 100% | ✅ | 0 | ✅ | 100% ✅ |
+| CPI | 100% | ✅ | 0 | ✅ | 100% ✅ |
 
 ---
 
-## 5. Collection & Update Process
+## 8. Collection & Update Process
 
 ### Raw Data Collection Workflow
 
@@ -340,7 +625,7 @@ Geocoded coordinates and Point-of-Interest (POI) datasets for HDB addresses and 
 2. **HDB Data Collection** (One-time or refresh)
    - Fetch latest HDB resale data from data.gov.sg
    - Load existing transactions to avoid duplicates
-   - Save with date suffix (e.g., resale_20260403.csv)
+   - Save with date suffix (e.g., resale_20260406.csv)
 
 3. **OneMap Geocoding** (Incremental, 1,500 addresses/batch)
    - Load pending HDB addresses (unique block+street combinations)
@@ -349,21 +634,28 @@ Geocoded coordinates and Point-of-Interest (POI) datasets for HDB addresses and 
    - Handle rate limiting (3 QPS)
    - Skip already-geocoded addresses via checkpoint
 
-4. **POI Collection** (Public datasets)
+4. **POI Collection** (Public datasets - OneMap & data.gov.sg)
    - Fetch MOE school list from SG government endpoints
    - Fetch NEA hawker centre data
-   - Fetch OneMap transit node data
-   - Fetch shopping mall POIs
+   - Fetch OneMap transit node data (MRT, LRT, bus interchanges)
+   - **NEW**: Fetch OneMap parks/playgrounds data
+   - Paginate through search results, deduplicate by coordinates
 
-5. **Feature Engineering** (Derived datasets)
-   - Calculate distance to nearest amenities
-   - Compute accessibility scores
-   - Estimate noise exposure
+5. **Economic Data Collection** (CPI for price normalization)
+   - **NEW**: Fetch Singapore CPI data from data.gov.sg
+   - Download monthly CPI index values (2012-present)
+   - Normalize column names, parse dates, extract year field
+   - Use for price deflation in feature layer
+
+6. **Feature Engineering** (Derived datasets)
+   - Calculate distance to nearest amenities (schools, parks, hawker centres)
+   - Compute accessibility scores (MRT walking time, CBD commute time)
+   - Estimate noise exposure based on highway proximity
    - Save derived features table
 
-6. **Data Validation & Correction**
+7. **Data Validation & Correction**
    - Run sanity checks (see `raw_data_sanity_check.ipynb`)
-   - Remove duplicates
+   - Remove duplicates from POI datasets
    - Fill missing values
    - Save corrected versions with backups
 
@@ -434,16 +726,18 @@ Geocoded coordinates and Point-of-Interest (POI) datasets for HDB addresses and 
 
 ---
 
-## 6. Checkpoint Information for Continuation
+## 9. Checkpoint Information for Continuation
 
 ### Current Collection Status
 
 **100% Complete ✅**
-- HDB Addresses: 9,710/9,710 geocoded
+- HDB Resale Prices: 314,961 transactions (3 CSV files)
+- HDB Transaction Statistics: 1,270 volume records (4 CSV files, 2006-2024)
 - Schools: 337/337 geocoded
 - Transit nodes: 129/129 collected
 - Hawker centres: 61/61 collected
-- Malls: ? collected (status TBD)
+- Parks/Playgrounds: ~3,500 collected
+- Singapore CPI: 168 monthly records (2012-2026)
 
 ### Resuming Interrupted Work
 
@@ -483,6 +777,8 @@ If corrections need to be reverted:
 
 **Immediate:**
 - [ ] Deploy feature engineering layer (see 02_feature_layer/)
+- [ ] Generate transaction volume features from HDB statistics
+- [ ] Integrate transaction sentiment analysis with resale prices
 - [ ] Monitor OneMap token expiration (next refresh: 2026-04-06)
 - [ ] Archive old backup files (keep last 3 versions)
 
@@ -518,7 +814,7 @@ If corrections need to be reverted:
 
 ---
 
-## Appendix: File Organization Best Practices
+## 10. Appendix: File Organization Best Practices
 
 ### Naming Conventions
 

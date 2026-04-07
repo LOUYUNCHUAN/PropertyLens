@@ -1,0 +1,15 @@
+{
+  "version": "20260403",
+  "timestamp": "2026-04-03T12:31:17.749735+00:00",
+  "layer": "data_layer",
+  "uploaded_items": [
+    "ResaleFlatPrices/",
+    "VERSION_MANIFEST.json",
+    "google_geo/",
+    "logs/",
+    "raw_collection_metadata_20260316.json",
+    "schools/"
+  ],
+  "description": "Raw data checkpoint with geographic & school data",
+  "old_versions_removed": 0
+}
