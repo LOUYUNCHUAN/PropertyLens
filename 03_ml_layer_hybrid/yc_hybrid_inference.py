@@ -6,7 +6,9 @@ and predicts resale_price from a 77-column feature matrix aligned with
 hybrid_cluster_feature_columns.json.
 
 The 8-input builder matches 07b's user fields but targets the YC schema via
-lookup on YC_data/hdb_feature_table_20260406.csv plus user overrides.
+lookup on the latest ``hdb_feature_table_*.csv`` under
+``hf_data/02_feature_layer/training/outputs/`` (same snapshot as training notebooks),
+unless ``yc_csv`` is passed explicitly.
 """
 
 from __future__ import annotations
@@ -21,13 +23,25 @@ import joblib
 import numpy as np
 import pandas as pd
 
-# ── Paths (module lives in exploration-on-yc-data/) ───────────────────────────
+# ── Paths (module lives in 03_ml_layer_hybrid/ or similar) ───────────────────
 _HERE = Path(__file__).resolve().parent
 _ART = _HERE / "artifacts"
 _DEFAULT_BUNDLE = _ART / "hybrid_cluster_bundle.joblib"
 _DEFAULT_FEAT_JSON = _ART / "hybrid_cluster_feature_columns.json"
 _REPO_ROOT = _HERE.parent
-_DEFAULT_YC_CSV = _REPO_ROOT / "YC_data" / "hdb_feature_table_20260406.csv"
+_HF_FEATURE_OUTPUTS = (
+    _REPO_ROOT / "hf_data" / "02_feature_layer" / "training" / "outputs"
+)
+
+
+def default_feature_table_csv() -> Path:
+    """Latest ``hdb_feature_table_YYYYMMDD.csv`` under feature-layer outputs."""
+    tables = sorted(_HF_FEATURE_OUTPUTS.glob("hdb_feature_table_*.csv"))
+    if not tables:
+        raise FileNotFoundError(
+            f"No hdb_feature_table_*.csv under {_HF_FEATURE_OUTPUTS}"
+        )
+    return tables[-1]
 
 # Eight fields matching 07b / predict_from_user_input
 USER_INPUT_KEYS = (
@@ -180,11 +194,11 @@ def _candidate_address_keys(block: str, street_name: str) -> list[str]:
     return out
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=8)
 def _load_yc_dataframe(yc_csv: str | None) -> pd.DataFrame:
-    path = Path(yc_csv) if yc_csv else _DEFAULT_YC_CSV
+    path = Path(yc_csv) if yc_csv else default_feature_table_csv()
     if not path.exists():
-        raise FileNotFoundError(f"YC table not found: {path}")
+        raise FileNotFoundError(f"Feature table not found: {path}")
     return pd.read_csv(path)
 
 
