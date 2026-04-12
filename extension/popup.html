@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        width: 280px;
+        font-family: 'DM Sans', sans-serif;
+        background: #faf8f4;
+        color: #1a1714;
+      }
+      .header {
+        background: white;
+        border-bottom: 1px solid #e8e4de;
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .logo-icon {
+        width: 28px;
+        height: 28px;
+        background: #4a7c6f;
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 700;
+        font-size: 13px;
+      }
+      .logo-text {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .logo-text span {
+        color: #4a7c6f;
+      }
+      .status-section {
+        padding: 16px;
+      }
+      .status-card {
+        background: white;
+        border: 1px solid #e8e4de;
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+      }
+      .status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+      }
+      .status-label {
+        color: #9a9590;
+      }
+      .status-val {
+        font-weight: 600;
+        color: #1a1714;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 5px;
+      }
+      .dot-green {
+        background: #22c55e;
+      }
+      .dot-red {
+        background: #c0392b;
+      }
+      .info-text {
+        font-size: 11px;
+        color: #9a9590;
+        line-height: 1.5;
+        padding: 0 4px;
+      }
+      .divider {
+        height: 1px;
+        background: #e8e4de;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="logo-icon">P</div>
+      <span class="logo-text">Property<span>Lens</span></span>
+    </div>
+
+    <div class="status-section">
+      <div class="status-card">
+        <div class="status-row">
+          <span class="status-label">API (localhost:8000)</span>
+          <span class="status-val" id="backend-status">
+            <span class="dot dot-red"></span>Checking...
+          </span>
+        </div>
+        <div class="divider"></div>
+        <div class="status-row">
+          <span class="status-label">Model</span>
+          <span class="status-val">Hybrid cluster</span>
+        </div>
+        <div class="divider"></div>
+        <div class="status-row">
+          <span class="status-label">Buyer UI</span>
+          <span class="status-val">localhost:5173</span>
+        </div>
+      </div>
+
+      <div class="status-card" style="margin-top: 10px">
+        <div class="status-row" style="flex-direction: column; align-items: stretch; gap: 6px">
+          <label class="status-label" for="pl-username">Shortlist name (match web login)</label>
+          <input
+            id="pl-username"
+            type="text"
+            placeholder="Leave blank for web default: user"
+            autocomplete="username"
+            style="
+              width: 100%;
+              padding: 8px 10px;
+              border: 1px solid #e8e4de;
+              border-radius: 8px;
+              font-size: 13px;
+              font-family: inherit;
+            "
+          />
+          <button
+            type="button"
+            id="pl-save-username"
+            style="
+              margin-top: 4px;
+              padding: 8px 12px;
+              border: none;
+              border-radius: 8px;
+              background: #4a7c6f;
+              color: white;
+              font-size: 12px;
+              font-weight: 600;
+              cursor: pointer;
+            "
+          >
+            Save name
+          </button>
+        </div>
+      </div>
+
+      <p class="info-text">
+        Open an HDB listing on PropertyGuru. Use <strong>Save to shortlist</strong> on the overlay to store listings under the name above (same as PropertyLens web login).
+      </p>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

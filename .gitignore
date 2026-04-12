@@ -1,3 +1,4 @@
+# ── Legacy notebook pipeline paths ─────────────────────────────────
 01_data_layer/raw/
 01_data_layer/raw
 02_feature_layer/training/outputs/
@@ -6,9 +7,60 @@
 03_ml_layer/training/outputs
 03_ml_layer/test/outputs/
 03_ml_layer/test/outputs
+
+# ── OS / editor / Python ───────────────────────────────────────────
+.claude/
+.cursor/*.log
 .DS_Store
 .ipynb_checkpoints/
 .env/
 venv/
+.venv/
 __pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Secrets
 .env
+
+# ── Node / frontend ────────────────────────────────────────────────
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+
+# ── Large / downloaded data (not in git — use notebooks/00_project_setup_environment.ipynb) ──
+data/processed/
+data/artifacts/
+data/feature_data/
+data/raw/
+data/amenities/
+data/propertylens.db
+data/propertylens.db-journal
+data/propertylens.db-wal
+data/propertylens.db-shm
+
+# Big blobs anywhere under data/ (redundant with dirs above; catches stray files)
+data/**/*.joblib
+data/**/*.parquet
+data/**/*.pkl
+data/**/*.pickle
+data/**/*.feather
+data/**/*.h5
+data/**/*.hdf5
+data/**/*.npz
+data/**/*.npy
+data/**/*.arrow
+data/**/*.bin
+data/**/*.pt
+data/**/*.onnx
+data/**/*.safetensors
+
+# Hugging Face hub cache if created inside the repo
+.huggingface/
+hf_cache/
+
+# Notebook output dumps
+notebooks/**/outputs/
+**/outputs/*.joblib
+**/outputs/*.parquet
