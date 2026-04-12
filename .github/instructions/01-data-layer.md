@@ -43,6 +43,7 @@ applyTo: "01_data_layer/**/*.ipynb"
 ### School Data (`schools/`)
 - **Primary:** `moe_general_information_of_schools_*.csv` — Official MOE dataset
 - **Secondary:** `sgschooling_2015plus_*.csv` — School allocation history, cutoff points, rankings
+  - ⚠️ **Known data sparsity (2026-04-12):** ~98% null `competition_ratio_extracted`, ~97.8% null `applicants_extracted`/`vacancies_extracted`. This causes downstream school quality features to have very low variability. Monitor when refreshing data.
 - **Geocoding:** `moe_schools_geocode_*.csv` — Latitude/longitude (via OneMap batch lookup)
 
 ### Geospatial & POI Data (`google_geo/`)
@@ -89,6 +90,62 @@ with open(f"raw_collection_metadata_{datetime.now().strftime('%Y%m%d')}.json", "
 ```
 
 ### Data Validation Checklist
+
+#### Critical Data Quality Checks
+Before exporting any raw dataset, verify these checks pass:
+
+1. **No Empty Values** — All key columns must be complete
+   ```python
+   critical_cols = ['block', 'street_name', 'town', 'resale_price', 'month_dt', 'lease_commence_date']
+   empty_check = df[critical_cols].isnull().sum()
+   assert empty_check.sum() == 0, f"Found empty values: {empty_check[empty_check > 0]}"
+   ```
+
+2. **No Duplicate Records** — Exact duplicates should be removed
+   ```python
+   # ⚠️  IMPORTANT: Always filter out backup files when globbing CSVs
+   #   hdb_files = [f for f in Path(hdb_dir).glob('*.csv') if 'backup' not in f.name.lower()]
+   before = len(df)
+   df = df.drop_duplicates()
+   after = len(df)
+   print(f"Duplicates removed: {before - after} ({100*(before-after)/before:.1f}%)")
+   ```
+
+3. **Address Uniqueness** — Different transactions may have same address (multiple years)
+   ```python
+   addr_key = df['block'].astype(str) + ' ' + df['street_name'].astype(str)
+   unique_addresses = addr_key.nunique()
+   avg_trans_per_addr = len(df) / unique_addresses
+   print(f"Unique addresses: {unique_addresses}, Avg transactions/address: {avg_trans_per_addr:.1f}")
+   # Expected: ~1-10 transactions per address (multiple years) — this is NORMAL
+   ```
+
+4. **Price Range Validation** — Flag suspect prices
+   ```python
+   df['resale_price'] = pd.to_numeric(df['resale_price'], errors='coerce')
+   valid_price_range = (df['resale_price'] >= 80000) & (df['resale_price'] <= 2000000)
+   outliers = (~valid_price_range).sum()
+   print(f"Price outliers (outside 80k-2M): {outliers}")
+   if outliers > 0:
+       print(f"  Min: ${df['resale_price'].min():,.0f}, Max: ${df['resale_price'].max():,.0f}")
+   ```
+
+5. **Temporal Consistency** — Transactions should span expected date range
+   ```python
+   df['month_dt'] = pd.to_datetime(df['month'], errors='coerce')
+   years = df['month_dt'].dt.year
+   print(f"Transaction year range: {years.min()}-{years.max()}")
+   assert years.min() >= 2012, f"Unexpected old transactions: {years.min()}"
+   ```
+
+#### Data Leakage Prevention
+- **Never mix train/test data during collection** — Raw data is collected as-is; train/test split happens only in **02_feature_layer**
+- **Time ordering:** If refreshing datasets, append new data (don't overwrite historical); maintain complete timeline
+- **Address keys:** Use consistent address hashing: `hashlib.md5(f"{block}|{street}|{town}".encode()).hexdigest()`
+    - **Very low variability:** Feature has < 1% unique values (almost all rows same value)
+  - Action: Review data source or feature engineering logic
+
+#### Standard Checks
 - [ ] **Duplicates:** Check for exact row matches; log count removed
 - [ ] **Missing Values:** Verify `remaining_lease` is imputed; target 0% nulls in critical fields
 - [ ] **Date Parsing:** Ensure `month` and `month_dt` are consistent (e.g. "2015-01" → datetime(2015, 1, 1))

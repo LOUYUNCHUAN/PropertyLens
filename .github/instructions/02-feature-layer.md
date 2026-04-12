@@ -17,11 +17,11 @@ applyTo: "02_feature_layer/**/*.ipynb"
 
 **Purpose:** Transform raw HDB data + geospatial/school enrichment into **ML-ready feature tables** with strict deduplication, categorical encoding, and temporal train/test splits.
 
-**Output Contract:**
-- **`hdb_feature_table_*.csv`** (260,699 rows × 73 cols) — Full deduplicated dataset
-- **`hdb_feature_train_*.csv`** (178,589 rows × 73 cols) — Train split (year < 2023)
-- **`hdb_feature_test_*.csv`** (82,110 rows × 73 cols) — Test split (year ≥ 2023)
-- **`feature_metadata_*.json`** — Schema/stats export
+**Output Contract (as of 2026-04-12):**
+- **`hdb_feature_table_*.csv`** (263,004 rows × 77 cols) — Full deduplicated dataset
+- **`hdb_feature_train_*.csv`** (180,195 rows × 77 cols) — Train split (year < 2023)
+- **`hdb_feature_test_*.csv`** (82,809 rows × 77 cols) — Test split (year ≥ 2023)
+- **`feature_metadata_*.json`** — Schema/stats export (includes `dropped_features` key listing any removed columns)
 
 **Location:** `02_feature_layer/training/outputs/` (or `hf_data/02_feature_layer/training/outputs/` if downloaded from HF)
 
@@ -62,7 +62,12 @@ applyTo: "02_feature_layer/**/*.ipynb"
 - `dist_highway_km` — Closest expressway (ER, PIE, CTE, etc.)
 
 **School Quality (derived from MOE data):**
+- `primary_school_quality_1km_weighted` — Weighted average quality score of primary schools within 1 km (398 unique values, CV=0.036)
+- `primary_school_count_1km` — Count of primary schools within 1 km
+- `school_count_1km` — Total count of all school types within 1 km
 - `school_cluster` — Derived school clustering rank
+
+> **Note on school quality data sparsity:** `sgschooling_2015plus_20260316.csv` has ~98% null `competition_ratio_extracted` entries. Downstream quality features therefore have low variability. `primary_school_top_quality_1km` was **removed** (2026-04-12) because it had only 3 unique values with 97.1% identical. If better school quality data becomes available, this feature can be reintroduced.
 
 ### One-Hot Encoded Categorical (51)
 - **Town (26):** ANG_MO_KIO, BEDOK, BISHAN, BUKIT BATOK, ... (all HDB towns)
@@ -136,9 +141,80 @@ print(f"Test:  {len(test)} rows, {test['transaction_year'].min()}-{test['transac
 
 ## 4. Validation Checklist
 
-Before exporting feature tables, verify:
+**CRITICAL:** Before exporting feature tables, verify the following checks pass. If any fail, **STOP** and fix the issues in `FeatureDealing.ipynb` before proceeding.
 
-### Null & uniqueness checks
+### Feature Variability Validation (NEW — CRITICAL)
+
+**Rule 1: No Empty Values in Core Features**
+- Every engineered feature must have a value for every property (0% nulls per feature)
+- Check:
+  ```python
+  core_features = ['level_mid', 'lease_remaining_years', 'floor_area_sqm', 'room_count', ... ]
+  null_summary = feature_table[core_features].isnull().sum()
+  assert null_summary.sum() == 0, f"Features with nulls: {null_summary[null_summary > 0].to_dict()}"
+  ```
+- **Action if fails:** Impute missing values before export
+  - **Numeric:** Use median (robust to outliers)
+  - **Categorical:** Use mode (most common value)
+  - **Last resort:** Drop rows with missing target (`resale_price`)
+
+**Rule 2: Sufficient Feature Variability**
+- Different properties must have different feature values
+- **Zero Variability (FAIL):** Feature has ≤1 unique value → **MUST REMOVE** immediately
+  - These features have no discriminative power and degrade model fitting
+  - Common cause: Unfinished feature engineering or failed computation
+  - Example: If all 263,004 rows have `market_activity_score = 50`, the feature is broken
+- **Low Variability (WARNING):** Feature has <1% unique values
+  - Monitor but may be acceptable (e.g., `room_count` naturally has few values)
+  - Check: Does the feature make domain sense?
+
+**Implementation in FeatureDealing.ipynb:**
+```python
+# QUALITY GATE: After engineering all features, scan for problems
+zero_var_features = []
+for col in feature_table.columns:
+    unique_count = feature_table[col].nunique()
+    if unique_count <= 1:
+        zero_var_features.append(col)
+        print(f"❌ ZERO VARIABILITY: '{col}' ({unique_count} unique)")
+
+# Remove zero-variability features if detected
+if zero_var_features:
+    print(f"🔧 Removing {len(zero_var_features)} zero-variability features...")
+    for col in zero_var_features:
+        if col in base_cols:
+            base_cols.remove(col)
+    feature_table = feature_table.drop(columns=zero_var_features)
+```
+
+**Removed Features (2026-04-12) — do NOT re-add without fixing root cause:**
+
+| Feature | Reason | Root Cause |
+|---|---|---|
+| `trans_sold_count` | constant = 0.0 | Transaction join failed in April 6 pipeline run |
+| `trans_rented_count` | constant = 0.0 | Transaction join failed |
+| `trans_total_count` | constant = 0.0 | Transaction join failed |
+| `trans_rental_ratio` | constant = 0.0 | Transaction join failed |
+| `market_activity_score` | constant = 50 | Transaction join failed |
+| `yoy_volume_change` | constant = 0.0 | Transaction join failed |
+| `primary_school_top_quality_1km` | 3 unique values, 97.1% same | sgschooling data 98% null |
+
+The **post-export gate** in `FeatureDealing.ipynb` (cell after the export cell) will raise `ValueError` if any of these (or any other constant column) appear in a future export.
+- If fails: Review feature engineering logic or raw data source
+
+**Rule 3: One-Hot Encoding Validity**
+- Each row should have exactly 1 value = 1 for each categorical (mutual exclusivity)
+- Check:
+  ```python
+  town_cols = [c for c in feature_table.columns if c.startswith('town_')]
+  row_sums = feature_table[town_cols].sum(axis=1)
+  assert (row_sums == 1).all(), "Invalid one-hot encoding!"
+  ```
+- If fails: Fix categorical encoding in `FeatureDealing.ipynb`
+
+### Additional Checks
+
+#### Null & Uniqueness
 ```python
 # 1. No missing values in critical columns
 critical_cols = ['resale_price', 'transaction_year', 'address_key', 'floor_area_sqm', 'lease_remaining_years']
@@ -153,36 +229,53 @@ assert df_final['transaction_year'].max() <= 2026, "Year too recent!"
 ```
 
 ### Feature distributions
+### Additional Checks
+
+#### 1. Null & Uniqueness
 ```python
-# 4. Price range sanity
-print(f"Price stats: min=${df_final['resale_price'].min()}, max=${df_final['resale_price'].max()}, mean=${df_final['resale_price'].mean():.0f}")
+# No missing values in critical columns
+critical_cols = ['resale_price', 'transaction_year', 'address_key', 'floor_area_sqm', 'lease_remaining_years']
+assert df_final[critical_cols].isna().sum().sum() == 0, "Found nulls in critical columns!"
+
+# No duplicate address-months
+assert ~df_final.duplicated(subset=['address_key', 'month_dt'], keep=False).any(), "Duplicate address-months!"
+
+# Transaction years within valid range
+assert df_final['transaction_year'].min() >= 2015, "Year too early!"
+assert df_final['transaction_year'].max() <= 2026, "Year too recent!"
+```
+
+#### 2. Feature Distributions
+```python
+# Price range sanity
 assert df_final['resale_price'].min() >= 100_000, "Price too low!"
 assert df_final['resale_price'].max() <= 2_000_000, "Price too high!"
+print(f"Price: ${df_final['resale_price'].min():,.0f} — ${df_final['resale_price'].max():,.0f}")
 
-# 5. Lease sanity
-print(f"Lease stats: min={df_final['lease_remaining_years'].min()}, max={df_final['lease_remaining_years'].max()}, mean={df_final['lease_remaining_years'].mean():.1f}")
+# Lease sanity
 assert df_final['lease_remaining_years'].min() >= 35, "Lease too short!"
+print(f"Lease: {df_final['lease_remaining_years'].min():.0f} — {df_final['lease_remaining_years'].max():.0f} years")
 
-# 6. Floor area sanity
-print(f"Floor area stats: min={df_final['floor_area_sqm'].min()}, max={df_final['floor_area_sqm'].max()}, mean={df_final['floor_area_sqm'].mean():.0f}")
+# Floor area sanity
 assert df_final['floor_area_sqm'].min() >= 30, "Floor area too small!"
 assert df_final['floor_area_sqm'].max() <= 300, "Floor area too large!"
+print(f"Floor area: {df_final['floor_area_sqm'].min():.0f} — {df_final['floor_area_sqm'].max():.0f} m²")
 ```
 
-### Train/test leakage
+#### 3. Train/Test Leakage
 ```python
-# 7. No temporal leakage
+# No temporal leakage
 assert train['transaction_year'].max() < 2023, "Train has 2023+ data!"
 assert test['transaction_year'].min() >= 2023, "Test has pre-2023 data!"
-print(f"✓ Temporal split clean: train {train['transaction_year'].max()} < test {test['transaction_year'].min()}")
+print(f"✓ Temporal split: train {train['transaction_year'].max()} | test {test['transaction_year'].min()}")
 ```
 
-### Schema consistency
+#### 4. Schema Consistency
 ```python
-# 8. Column consistency across splits
+# Column consistency across splits
 assert set(train.columns) == set(test.columns), "Column mismatch between train/test!"
 assert set(train.columns) == set(df_final.columns), "Column mismatch with full table!"
-print(f"✓ Schema consistent: {len(train.columns)} columns in all 3 datasets")
+print(f"✓ Schema: {len(train.columns)} columns consistent across all 3 datasets")
 ```
 
 ---
@@ -194,7 +287,7 @@ print(f"✓ Schema consistent: {len(train.columns)} columns in all 3 datasets")
 from datetime import datetime
 date_suffix = datetime.now().strftime('%Y%m%d')
 
-# Export all 3 tables + metadata
+# Export all 3 tables
 df_final.to_csv(f'outputs/hdb_feature_table_{date_suffix}.csv', index=False)
 train.to_csv(f'outputs/hdb_feature_train_{date_suffix}.csv', index=False)
 test.to_csv(f'outputs/hdb_feature_test_{date_suffix}.csv', index=False)
@@ -205,33 +298,15 @@ metadata = {
     'total_rows': len(df_final),
     'train_rows': len(train),
     'test_rows': len(test),
-    'columns': df_final.columns.tolist(),
     'num_columns': len(df_final.columns),
-    'core_features': 22,
-    'ohe_features': len(df_final.columns) - 22 - 3,  # -3 for target/time/id
-    'price_range_usd': [
-        float(df_final['resale_price'].min()),
-        float(df_final['resale_price'].max())
-    ],
-    'year_range': [
-        int(df_final['transaction_year'].min()),
-        int(df_final['transaction_year'].max())
-    ],
-    'train_year_range': [
-        int(train['transaction_year'].min()),
-        int(train['transaction_year'].max())
-    ],
-    'test_year_range': [
-        int(test['transaction_year'].min()),
-        int(test['transaction_year'].max())
-    ]
+    'price_range_usd': [float(df_final['resale_price'].min()), float(df_final['resale_price'].max())],
+    'year_range': [int(df_final['transaction_year'].min()), int(df_final['transaction_year'].max())]
 }
-
 import json
 with open(f'outputs/feature_metadata_{date_suffix}.json', 'w') as f:
     json.dump(metadata, f, indent=2)
 
-print(f"✓ Exported 4 artefacts with suffix _{date_suffix}")
+print(f"✓ Exported 4 artefacts: _{date_suffix}")
 ```
 
 ---
@@ -241,27 +316,44 @@ print(f"✓ Exported 4 artefacts with suffix _{date_suffix}")
 ### Deduplication Logging
 ```python
 # Always log dedup impact
-initial = 314961  # From raw data
-post_dedup = len(df_final)
-print(f"Deduplication: {initial} → {post_dedup} ({100*post_dedup/initial:.1f}% retained)")
+print(f"Deduplication: {initial} → {len(df_final)} rows ({100*len(df_final)/initial:.1f}% retained)")
 ```
 
 ### Feature Distribution Reporting
 ```python
-# Print summary statistics for key features
-for col in ['resale_price', 'floor_area_sqm', 'lease_remaining_years', 'dist_nearest_mrt_km']:
+# Summary statistics for key features
+for col in ['resale_price', 'floor_area_sqm', 'lease_remaining_years']:
     if col in df_final.columns:
-        print(f"{col}: μ={df_final[col].mean():.1f}, σ={df_final[col].std():.1f}, "
-              f"min={df_final[col].min():.1f}, max={df_final[col].max():.1f}")
+        print(f"{col}: μ={df_final[col].mean():.1f}, σ={df_final[col].std():.1f}")
 ```
 
-### Downstream Validation (Post-Export)
+### Post-Export Validation
 ```python
-# Quick sanity check that exported files load correctly
+# Quick sanity check
 train_check = pd.read_csv(f'outputs/hdb_feature_train_{date_suffix}.csv')
 assert len(train_check) == len(train), "Train CSV row count mismatch!"
-print(f"✓ Post-export validation passed: {len(train_check)} rows in train CSV")
+print(f"✓ Post-export validation: {len(train_check)} rows in train CSV")
 ```
+
+---
+
+## 7. Troubleshooting
+
+| Issue | Root Cause | Solution |
+|-------|-----------|----------|
+| Feature has zero variability | Feature engineering produced same value for all rows | Review feature logic in `FeatureDealing.ipynb`; check data source |
+| Missing values in core feature | Raw data incomplete | Impute using mean/median/forward-fill or drop affected rows |
+| One-hot encoding invalid | Categorical encoding error | Verify no row has > 1 "1" value per category |
+| Train/test leakage | Temporal anomaly | Check year splits: train < 2023, test ≥ 2023 |
+| Low correlation with price | Feature not predictive | Feature may be valid but weak; validate with ML model |
+
+---
+
+## 8. See Also
+
+- [Feature Layer README](../../02_feature_layer/README.md) — Full schema & engineering details
+- [Validation Notebook](../../02_feature_layer/training/FeatureValidation.ipynb) — Run automated checks
+- [Workspace Instructions](../../.github/copilot-instructions.md) — General conventions
 
 ---
 

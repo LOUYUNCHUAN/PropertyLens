@@ -148,6 +148,15 @@ print(f'Target stats: {df[\"resale_price\"].describe()}')
 ## 5. Quality & Testing Standards
 
 ### Data Validation
+
+#### Critical Feature Checks (NEW)
+- **No Empty Values:** All engineered features must have values for every property (0% nulls in core features)
+- **Sufficient Variability:** Different properties must have different feature values
+  - Red flag: If a feature has < 1% unique values, it's almost all the same value (zero discriminative power)
+  - Red flag: If a feature has only 1 unique value, remove it or investigate
+- **One-Hot Encoding:** Each categorical must have exactly 1 = 1 per row (mutual exclusivity)
+
+#### Standard Checks
 - **Train/Test Leakage:** Ensure temporal split (year < 2023 for train, ≥ 2023 for test). Never mix.
 - **Duplicates:** Check for duplicate rows and addresses; log removal counts.
 - **Nulls:** Verify zero missing values in critical columns (`resale_price`, `transaction_year`, `address_key`).
