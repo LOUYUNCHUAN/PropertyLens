@@ -10,9 +10,14 @@
 
 PropertyLens is a **layered, notebook-driven pipeline** that transforms public HDB transaction data and geospatial enrichment into **explainable price predictions**. The architecture follows a **strict execution order** and uses **date-stamped artefacts** for versioning and reproducibility.
 
-### 4-Layer Architecture
+### 5-Layer Architecture
 
 ```
+┌─────────────────────────────────────────────────────┐
+│ 05_photo_layer/                                     │
+│ Photo Condition Scoring (EfficientNet-B0, ±10 %)   │
+└─────────────────────────────────────────────────────┘
+                         ↑  (optional enhancement)
 ┌─────────────────────────────────────────────────────┐
 │ 04_xai_layer/                                       │
 │ Explainability (SHAP, LIME, surrogate rules, CBR)  │
@@ -59,6 +64,11 @@ PropertyLens is a **layered, notebook-driven pipeline** that transforms public H
 5. **Step 4:** Train XAI artefacts via [`04_xai_layer/`](04_xai_layer/) **in order**:
    - [`04_hybrid_xai_train.ipynb`](04_xai_layer/04_hybrid_xai_train.ipynb) — Train surrogate models, Apriori rules
    - [`05_hybrid_xai_explain.ipynb`](04_xai_layer/05_hybrid_xai_explain.ipynb) — Per-listing attributions
+
+6. **Step 5** (optional): Photo-adjusted predictions via [`05_photo_layer/`](05_photo_layer/) **in order**:
+   - [`01_photo_data_prep.ipynb`](05_photo_layer/01_photo_data_prep.ipynb) — Image dataset preparation and labelling
+   - [`02_photo_model_train.ipynb`](05_photo_layer/02_photo_model_train.ipynb) — Fine-tune EfficientNet-B0 condition scorer
+   - [`03_photo_adjusted_predict.ipynb`](05_photo_layer/03_photo_adjusted_predict.ipynb) — Inference with photo-adjusted price output
 
 ---
 
@@ -109,6 +119,7 @@ Downstream code expects **`hf_data/02_feature_layer/training/outputs/`** with:
 | **02_feature_layer** | Feature tables, metadata | `02_feature_layer/training/outputs/` or `hf_data/02_feature_layer/training/outputs/` |
 | **03_ml_layer_hybrid** | Models, bundles, inference module | `03_ml_layer_hybrid/artifacts/`, `yc_hybrid_inference.py` |
 | **04_xai_layer** | SHAP values, surrogate models, rules | `04_xai_layer/artifacts/` (created after training) |
+| **05_photo_layer** | EfficientNet-B0 weights, training metadata | `05_photo_layer/artifacts/`, `yc_photo_condition.py` |
 
 ---
 
@@ -187,6 +198,7 @@ See layer-specific instructions for deeper workflows:
 - [02_feature_layer/](02_feature_layer/) — [`.github/instructions/02-feature-layer.md`](.github/instructions/02-feature-layer.md)
 - [03_ml_layer_hybrid/](03_ml_layer_hybrid/) — [`.github/instructions/03-ml-layer-hybrid.md`](.github/instructions/03-ml-layer-hybrid.md)
 - [04_xai_layer/](04_xai_layer/) — [`.github/instructions/04-xai-layer.md`](.github/instructions/04-xai-layer.md)
+- [05_photo_layer/](05_photo_layer/) — [`.github/instructions/05-photo-layer.md`](.github/instructions/05-photo-layer.md)
 
 ---
 
@@ -216,4 +228,5 @@ See layer-specific instructions for deeper workflows:
 - [Data Layer README](01_data_layer/README.md)
 - [Feature Layer README](02_feature_layer/README.md)
 - [Inference Module](03_ml_layer_hybrid/yc_hybrid_inference.py)
+- [Photo Condition Module](05_photo_layer/yc_photo_condition.py)
 - [Architecture Overview](00_project_docs/architecture_overview.md)
