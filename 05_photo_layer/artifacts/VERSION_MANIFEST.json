@@ -1,0 +1,13 @@
+{
+  "version": "20260412",
+  "timestamp": "2026-04-12T00:00:00+08:00",
+  "layer": "photo_artifacts",
+  "files": [
+    "VERSION_MANIFEST.json",
+    "condition_model_meta_20260412.json",
+    "training_curves_20260412.png"
+  ],
+  "architecture": "efficientnet_b0",
+  "description": "Photo condition model training artifacts (EfficientNet-B0 regression head, score 0-10)",
+  "note": "condition_model_*.pth weights uploaded separately when training is complete"
+}

@@ -219,6 +219,7 @@ See layer-specific instructions for deeper workflows:
 - Verify paths from both **repo root** and **layer subdirectory** cwd
 - Log key metrics and sample outputs in notebook cells
 - ask me which python virtual environment to use if you need to run code locally.
+- check the compability between the windows environment and the linux environment before running code locally. solve any compatibility issues that arise.
 
 ---
 
