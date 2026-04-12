@@ -198,6 +198,7 @@ See layer-specific instructions for deeper workflows:
 - Assume a frontend or npm workflow (this is a data/ML pipeline only)
 - Make unrelated refactors (scoped changes only)
 - Hard-code artefact dates; use **latest-table snapshot logic** instead
+- create python virtual environments.
 
 ✅ **DO:**
 - Match the surrounding file's style (imports, spacing, comments)
@@ -205,6 +206,7 @@ See layer-specific instructions for deeper workflows:
 - Cross-reference layer READMEs when changing artefact paths
 - Verify paths from both **repo root** and **layer subdirectory** cwd
 - Log key metrics and sample outputs in notebook cells
+- ask me which python virtual environment to use if you need to run code locally.
 
 ---
 

@@ -14,3 +14,4 @@ __pycache__/
 .env
 hf_data/
 03_ml_layer_hybrid/artifacts
+05_photo_layer/data/
