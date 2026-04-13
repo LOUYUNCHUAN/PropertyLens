@@ -6,6 +6,76 @@
 
 ---
 
+## Quick Start
+
+> **Skip this layer if you just want to run the models.**
+> Raw data is already on Hugging Face — run `00_download_data_from_HF.ipynb` from the repo root instead.
+>
+> Only follow these steps if you need to **refresh data from source**.
+
+**STEP 1.** Open `pipelines/raw_data_collection.ipynb` — kernel: `.venv/bin/python` — Run All Cells
+→ Downloads HDB transactions, geocodes blocks via OneMap, collects school & POI data
+
+**STEP 2.** Open `pipelines/raw_data_sanity_check.ipynb` — Run All Cells
+→ Deduplicates records, imputes lease values, validates price ranges, creates backup
+
+**Done.** Outputs land in `01_data_layer/raw/` and feed into Layer 02.
+
+---
+
+## How to Run
+
+> **Most teammates can skip this layer.** Pre-collected data is already uploaded to Hugging Face and seeded into the repo. Only run these notebooks if you need to refresh the raw data from its original sources.
+
+### Prerequisites
+
+- `.env` file in the repo root with `ONEMAP_API_KEY` (required for geocoding)
+- Active internet connection (public APIs: data.gov.sg, OneMap, MOE)
+- Python environment: `.venv/bin/python` (set as the notebook kernel)
+
+### Notebooks (run in order)
+
+| # | Notebook | What it does | When to run |
+|---|----------|--------------|-------------|
+| 1 | `pipelines/raw_data_collection.ipynb` | Downloads HDB transactions from data.gov.sg; batch-geocodes blocks via OneMap; collects school and POI data | Raw data refresh only |
+| 2 | `pipelines/raw_data_sanity_check.ipynb` | Deduplication, lease imputation, price-range validation, and backup | After every collection run |
+
+**How to run in VS Code / JupyterLab:**
+1. Open the notebook file
+2. Select kernel: `.venv/bin/python` (Python 3.13, `.venv`)
+3. Run All Cells (`⇧⌘↩` in VS Code)
+
+### Expected outputs
+
+```
+01_data_layer/raw/
+├── ResaleFlatPrices/             # 3 HDB transaction CSVs (~315k rows)
+├── google_geo/                   # Geocoded blocks, MRT, malls, hawkers, parks
+├── schools/                      # MOE school data + geocoding
+└── raw_collection_metadata_YYYYMMDD.json
+```
+
+### Quick validation
+
+```python
+import pandas as pd
+from pathlib import Path
+df = pd.read_csv('raw/ResaleFlatPrices/Resale flat prices based on registration date from Jan-2017 onwards.csv')
+print(df.shape)           # expect (~226k, 11)
+assert df['resale_price'].min() > 100_000
+print("Data layer OK")
+```
+
+### Common issues
+
+| Issue | Fix |
+|-------|-----|
+| `ONEMAP_API_KEY` missing | Add `ONEMAP_API_KEY=<token>` to `.env` at repo root |
+| OneMap 429 rate-limit error | The notebook adds `time.sleep(0.5)` between batches — reduce batch size if needed |
+| Backup CSVs skewing row counts | Glob filter already excludes `*_backup_*` files |
+
+---
+
 ## Overview
 
 The data layer maintains raw public datasets used by feature and model layers. All raw data files are stored with date suffixes (YYYYMMDD format) for versioning and incremental updates.

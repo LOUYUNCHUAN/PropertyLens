@@ -6,6 +6,83 @@
 
 ---
 
+## Quick Start
+
+> **Skip this layer if you just want to run the models.**
+> Pre-built feature tables are on Hugging Face — run `00_download_data_from_HF.ipynb` from the repo root instead.
+>
+> Only follow these steps if you need to **rebuild features from raw data**.
+
+**STEP 1.** Make sure `01_data_layer/raw/` is populated (run Layer 01 or restore from backup)
+
+**STEP 2.** Open `training/FeatureDealing.ipynb` — kernel: `.venv/bin/python` — Run All Cells
+→ Builds 77 features (22 core + 51 OHE), deduplicates, splits train/test
+
+**STEP 3.** Open `training/FeatureValidation.ipynb` — Run All Cells
+→ Validates distributions, checks zero-variance features, confirms OHE correctness
+
+**Done.** Outputs land in `training/outputs/hdb_feature_*.csv` and feed into Layer 03.
+
+---
+
+## How to Run
+
+> **Most teammates can skip this layer.** Pre-built feature tables are available on Hugging Face. Run `00_download_data_from_HF.ipynb` from the repo root to populate `hf_data/02_feature_layer/training/outputs/`. Only run these notebooks if you need to rebuild features from updated raw data.
+
+### Prerequisites
+
+- `01_data_layer/raw/` populated (run Layer 01 first, or use existing raw data)
+- Python environment: `.venv/bin/python` (set as the notebook kernel)
+
+### Notebooks (run in order)
+
+| # | Notebook | What it does | Runtime |
+|---|----------|--------------|---------|
+| 1 | `training/FeatureDealing.ipynb` | Builds 77 engineered features (22 core + 51 OHE), deduplicates, applies temporal train/test split | ~5–10 min |
+| 2 | `training/FeatureValidation.ipynb` | Validates distributions, checks zero-variance features, verifies OHE correctness | ~2–3 min |
+
+**How to run in VS Code / JupyterLab:**
+1. Open the notebook inside `training/`
+2. Select kernel: `.venv/bin/python`
+3. Run All Cells
+
+### Expected outputs
+
+```
+02_feature_layer/training/outputs/
+├── hdb_feature_table_YYYYMMDD.csv     # Full dataset  (~263k rows × 77 cols, ~137 MB)
+├── hdb_feature_train_YYYYMMDD.csv     # Train split   (~180k rows, year < 2023)
+├── hdb_feature_test_YYYYMMDD.csv      # Test split    (~83k rows,  year ≥ 2023)
+└── feature_metadata_YYYYMMDD.json     # Schema + dropped features list
+```
+
+All downstream notebooks use **latest-snapshot glob logic** — they automatically pick up the newest `YYYYMMDD` file.
+
+### Quick validation
+
+```python
+import pandas as pd
+from pathlib import Path
+outputs = Path('training/outputs')
+csv = sorted(outputs.glob('hdb_feature_table_*.csv'))[-1]
+df = pd.read_csv(csv)
+print(f"Shape: {df.shape}")            # expect (~263k, 77)
+assert df['resale_price'].isna().sum() == 0
+assert df.shape[1] == 77
+print("Feature layer OK")
+```
+
+### Common issues
+
+| Issue | Fix |
+|-------|-----|
+| `FileNotFoundError` on raw CSVs | Verify `01_data_layer/raw/` exists; run Layer 01 or restore from backup |
+| OHE column count ≠ 51 | Unexpected new category in raw data — check `town`/`flat_type` values |
+| Zero-variance feature warning | See `feature_metadata_*.json` → `dropped_features` key for list |
+| OOM error loading CSVs | Use `pd.read_csv(..., chunksize=50000)` for constrained RAM environments |
+
+---
+
 ## Overview
 
 The feature layer transforms raw HDB transaction data and geographic/school data into ML-ready feature tables. All datasets are produced by `FeatureDealing.ipynb` and validated by `FeatureValidation.ipynb`, with strict deduplication, categorical encoding, and train/test splitting applied.
