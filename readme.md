@@ -1,76 +1,136 @@
 # PropertyLens
 
-PropertyLens is a layered project for Singapore HDB resale price prediction, location-aware ranking, and interpretable model outputs.
+PropertyLens predicts Singapore HDB resale prices, ranks listings with location-aware signals, and surfaces interpretable model outputs (SHAP, LIME, CBR comparables) in a FastAPI backend and Vite/React frontend.
 
-## Current Goals
+## Prerequisites
 
-- Predict HDB resale prices using transaction history, geographic POIs, school competition signals, and accessibility features.
-- Support preference-aware property search and ranking through configurable feature weights.
-- Provide local explanation outputs that break predicted price into feature-level contributions.
+- **Python 3.11+** (recommended; hybrid model pickles expect sklearn 1.8 / XGBoost 3.2 — see `backend/.env.example`).
+- **Node.js 18+** (for the web UI).
+- A **Hugging Face account and token** (`HF_TOKEN`) to download model artefacts and datasets on first setup. Create a read token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
 
-## Current Working Structure
+Large generated files under `data/` are **gitignored**. After cloning, you must populate `data/` using the setup notebook (below) or copy artefacts from someone who already has them.
+
+## Quick start: run locally
+
+### 1. Clone and virtual environment
+
+```bash
+git clone <repository-url>
+cd PropertyLens
+python3.11 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r backend/requirements.txt
+```
+
+Optional: `pip install jupyter ipywidgets` if you will run setup notebooks from this venv.
+
+### 2. Download data (models, features, amenities, DB)
+
+Open and run **`notebooks/00_project_setup_environment.ipynb`** top to bottom. It:
+
+- Creates `data/` layout (`artifacts`, feature tables, `amenities`).
+- Expects a repo-root **`.env`** with **`HF_TOKEN=...`** (the notebook can create an empty `.env` if missing).
+- Pulls from Hugging Face: model bundle (`PropertyLens/propertylens-models`), feature CSVs and amenity CSVs (`PropertyLens/Resealeflats`).
+- Initializes **`data/propertylens.db`** (SQLite) for auth, prediction history, and wishlist.
+
+Copy **`backend/.env.example`** → **`backend/.env`** and adjust if needed (JWT, `DATABASE_URL`, chat, Neo4j — all optional for a minimal local run).
+
+### 3. Run the API
+
+From the repo root, with the venv active:
+
+```bash
+cd backend
+uvicorn main:app --reload --port 8000
+```
+
+- API: [http://127.0.0.1:8000](http://127.0.0.1:8000)
+- Interactive docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- Health check: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+
+```bash
+curl -s http://127.0.0.1:8000/health
+```
+
+### 4. Run the frontend
+
+In a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The Vite dev server proxies `/api` to the backend (see `frontend/vite.config.js`). Open the URL printed in the terminal (typically [http://localhost:5173](http://localhost:5173)).
+
+Optional: **`frontend/.env.example`** → **`.env`** if you need a fixed API origin (e.g. production build).
+
+## Project layout
 
 ```text
 PropertyLens/
-	00_project_docs/
-		architecture_overview.md
-	01_data_layer/
-		README.md
-		graphInfo.mmd
-		pipelines/
-			raw_data_collection.ipynb
-		raw/
-			ResaleFlatPrices/
-			google_geo/
-			schools/
-	02_feature_layer/
-		training/
-			FeatureDealing.ipynb
-			outputs/
-	03_ml_layer/
-		README.md
-		graphInfo.mmd
-		training/
-			hybrid_price_prediction_20260316.ipynb
-			outputs/
-		test/
-			unit_price_predict_shap.ipynb
-			outputs/
-	backup/
-	common/
-		config/
-			feature_weights.example.yaml
-		schemas/
-			pricing_request.schema.json
-			search_request.schema.json
+  backend/           # FastAPI app (predict, explain, CBR, analytics, …)
+  frontend/          # Vite + React UI
+  data/              # Artefacts and CSVs (gitignored when large — filled by setup notebook)
+  notebooks/         # Setup, data pulls, ML pipelines, HF upload helpers
+  docs/              # Developer guides (e.g. views)
+  extension/         # Browser extension (optional)
 ```
 
-## Active Pipeline
+## ML pipeline and notebooks
 
-1. Data collection
-   - [01_data_layer/pipelines/raw_data_collection.ipynb](/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/pipelines/raw_data_collection.ipynb) collects or refreshes raw public datasets.
-   - Raw inputs are stored under [01_data_layer/raw](/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/01_data_layer/raw).
+Training and feature engineering live under **`notebooks/`** (hybrid ensemble, XAI, etc.). You do **not** need to retrain to run the app locally if you completed **`00_project_setup_environment.ipynb`**.
 
-2. Feature engineering
-   - [02_feature_layer/training/FeatureDealing.ipynb](/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/02_feature_layer/training/FeatureDealing.ipynb) builds the training-ready feature tables.
-   - Outputs are written to [02_feature_layer/training/outputs](/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/02_feature_layer/training/outputs).
+- Regenerate amenity CSVs from public APIs: `notebooks/00_download_amenity_data.ipynb`
+- Upload amenities to Hugging Face: `notebooks/00_test_upload_amenities_to_hf.ipynb`
 
-3. Model training
-   - [03_ml_layer/training/hybrid_price_prediction_20260316.ipynb](/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/03_ml_layer/training/hybrid_price_prediction_20260316.ipynb) trains and evaluates the price model.
-   - Model artifacts are written to [03_ml_layer/training/outputs](/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/03_ml_layer/training/outputs).
+## Documentation
 
-4. Inference and explanation
-   - [03_ml_layer/test/unit_price_predict_shap.ipynb](/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/03_ml_layer/test/unit_price_predict_shap.ipynb) performs single-unit inference and SHAP-style explanation using the latest saved model.
-   - Unit-level outputs are written to [03_ml_layer/test/outputs](/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/03_ml_layer/test/outputs).
+- **`backend/README.md`** — backend details, troubleshooting (e.g. `libomp` on macOS, LIME import errors).
+- **`docs/views-developer-guide.md`** — Buyer / Seller / Shortlist behaviour and API usage from the frontend.
 
-## Notes
+## Known Behaviours — SHAP Explanation
 
-- The `backup/` folder stores archived scripts, staging files, and exploratory notebooks that are no longer part of the active pipeline.
-- The current implementation is notebook-driven. Earlier Python scripts and staging artifacts have been archived to reduce workspace noise.
-- The active notebooks follow a latest-artifact pattern and load the newest dated file that matches each expected dataset.
+### base_value varies by cluster
 
-## Recommended Next Steps
+The PropertyLens model is a Hybrid Cluster Ensemble with 3 clusters.
+Each cluster routes flats to a different XGBoost sub-model.
+When `shap.TreeExplainer` is run on a sub-model, the `expected_value`
+(base_value) it returns is the **average prediction of that specific
+cluster's training subset** — not the global average across all flats.
 
-- Add a lightweight service layer for price prediction and search requests.
-- Replace notebook-only orchestration with reusable Python modules once the pipeline stabilizes.
-- Add validation checks for POI completeness, especially for malls, schools, and transport features.
+Verified live results:
+
+| Flat profile | Cluster | base_value |
+|---|---|---|
+| Serangoon 3-room 64sqm | 0 or 1 | $421,327 |
+| Tampines 4-room 95sqm  | 0 or 1 | $421,327 |
+| Bishan 4-room 105sqm   | 0 or 1 | $421,327 |
+| Queenstown 5-room 121sqm | 2    | $528,700 |
+
+This means:
+- Clusters 0/1 contain lower-to-mid value flats (baseline ~$421k)
+- Cluster 2 contains higher-value flats (baseline ~$529k)
+- The baseline is the average price **within that cluster**, not nationally
+
+### Implication for the UI
+
+The BaselineContextPanel in Step 1 must NOT always label the baseline
+as \"national average\" — for cluster 2 flats the label would be
+misleading. Instead it uses a dynamic label based on the base_value
+threshold (see `BaselineContextPanel` in `frontend/src/components/buyer/BuyerEstimateInsights.jsx`).
+
+### How to identify which cluster a flat belongs to
+
+The cluster boundary is approximately base_value > $480,000.
+Flats routed to cluster 2 (high-value) have base_value ≈ $528,700.
+All other flats have base_value ≈ $421,327.
+
+If the model is retrained, these thresholds should be re-verified.
+
+## Goals (product)
+
+- Predict HDB resale prices using transaction history, POIs, schools, and accessibility features.
+- Support preference-aware search and ranking where feature weights matter.
+- Expose local explanations (SHAP-style drivers, LIME, comparables) alongside point estimates.

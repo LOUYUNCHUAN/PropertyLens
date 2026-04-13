@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "PropertyLens — HDB listing insight",
+  "version": "1.0.0",
+  "description": "Fair value estimate on PropertyGuru HDB listings via your local PropertyLens API",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "https://www.propertyguru.com.sg/*",
+    "http://localhost:8000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.propertyguru.com.sg/property-for-sale/*",
+        "https://www.propertyguru.com.sg/listing/*",
+        "https://www.propertyguru.com.sg/listing/hdb-for-sale/*"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
