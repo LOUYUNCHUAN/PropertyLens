@@ -1,13 +1,14 @@
 {
-  "version": "20260412",
-  "timestamp": "2026-04-12T00:00:00+08:00",
+  "version": "20260413",
+  "timestamp": "2026-04-13T00:00:00+08:00",
   "layer": "photo_artifacts",
   "files": [
     "VERSION_MANIFEST.json",
-    "condition_model_meta_20260412.json",
+    "condition_model_20260413.pth",
+    "condition_model_meta_20260413.json",
     "training_curves_20260412.png"
   ],
   "architecture": "efficientnet_b0",
   "description": "Photo condition model training artifacts (EfficientNet-B0 regression head, score 0-10)",
-  "note": "condition_model_*.pth weights uploaded separately when training is complete"
+  "note": "condition_model_*.pth trained on MPS (Apple Silicon); val_mae=0.4903"
 }

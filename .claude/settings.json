@@ -1,6 +1,14 @@
 {
   "permissions": {
-    "deny": [
+    "deny": [],
+    "allow": [
+      "Bash(*)",
+      "Python(*)",
+      "Shell(*)",
+      "Read(*)",
+      "Write(/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/**)",
+      "Write(/tmp/**)",
+      "Edit(/Users/lorenzolou/Library/Mobile Documents/com~apple~CloudDocs/NUS/PropertyLens/**)"
     ]
   }
 }

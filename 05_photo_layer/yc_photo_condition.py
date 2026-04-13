@@ -102,8 +102,9 @@ def load_condition_model(model_path: str | Path | None = None):
     Parameters
     ----------
     model_path : path to the .pth weights file. If None, the latest
-                 ``condition_model_*.pth`` under ``05_photo_layer/artifacts/``
-                 is used.
+                 ``condition_model_*.pth`` is auto-discovered in this order:
+                 1. ``<repo_root>/hf_data/05_photo_layer/artifacts/``  (downloaded cache)
+                 2. ``05_photo_layer/artifacts/``                       (local training output)
 
     Returns
     -------
@@ -113,13 +114,24 @@ def load_condition_model(model_path: str | Path | None = None):
     import torchvision.models as tv_models
 
     if model_path is None:
-        candidates = sorted((_HERE / "artifacts").glob(_DEFAULT_MODEL_GLOB))
+        # Search hf_data mirror first (conventional downloaded path), then local artifacts
+        _search_dirs = [
+            _REPO_ROOT / "hf_data" / "05_photo_layer" / "artifacts",
+            _HERE / "artifacts",
+        ]
+        candidates = []
+        for d in _search_dirs:
+            candidates = sorted(d.glob(_DEFAULT_MODEL_GLOB))
+            if candidates:
+                break
         if not candidates:
             raise FileNotFoundError(
-                f"No condition_model_*.pth found under {_HERE / 'artifacts'}. "
-                "Run 02_photo_model_train.ipynb first."
+                f"No condition_model_*.pth found. Searched:\n"
+                + "\n".join(f"  {d}" for d in _search_dirs)
+                + "\nRun 02_photo_model_train.ipynb or 00_download_data_from_HF.ipynb first."
             )
         model_path = candidates[-1]
+        print(f"Loading condition model from: {model_path}")
 
     model_path = Path(model_path)
     if not model_path.exists():
@@ -306,7 +318,15 @@ def predict_with_photo(
 def load_model_meta(model_path: str | Path | None = None) -> dict[str, Any]:
     """Load the JSON metadata sidecar for a trained condition model."""
     if model_path is None:
-        candidates = sorted((_HERE / "artifacts").glob(_DEFAULT_MODEL_GLOB))
+        _search_dirs = [
+            _REPO_ROOT / "hf_data" / "05_photo_layer" / "artifacts",
+            _HERE / "artifacts",
+        ]
+        candidates = []
+        for d in _search_dirs:
+            candidates = sorted(d.glob(_DEFAULT_MODEL_GLOB))
+            if candidates:
+                break
         if not candidates:
             raise FileNotFoundError("No condition_model_*.pth found under artifacts/")
         model_path = candidates[-1]
