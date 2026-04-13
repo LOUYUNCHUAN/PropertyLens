@@ -21,10 +21,11 @@ function ProtectedLayout({ children }) {
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar />
-      <div className="ml-[260px] flex min-h-screen min-w-0 flex-1 flex-col">
+      <div className="ml-[260px] flex h-[100dvh] min-h-0 min-w-0 flex-1 flex-col">
         <AppHeader />
-        {/* shrink-0: main height follows page content; avoids a viewport-tall <main> + nested scroll from flex-1 */}
-        <main className="min-w-0 shrink-0 px-8 pb-8 pt-6">{children}</main>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-muted/25 px-8 pb-10 pt-8">
+          {children}
+        </main>
       </div>
       <ChatBot />
     </div>

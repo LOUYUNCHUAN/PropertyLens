@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { getTownCoords } from '../constants/towns.js'
@@ -205,6 +205,18 @@ export default function LocationMap({
     ? Object.values(nearby).reduce((s, arr) => s + arr.length, 0)
     : 0
 
+  const gridItems = useMemo(() => {
+    if (!nearby) return []
+    const out = []
+    for (const [cat, items] of Object.entries(nearby)) {
+      if (activeCategory !== 'all' && activeCategory !== cat) continue
+      items.forEach((item, idx) => {
+        out.push({ cat, item, key: `${cat}-${idx}` })
+      })
+    }
+    return out
+  }, [nearby, activeCategory])
+
   return (
     <div style={{ position: 'relative', width: '100%' }}>
       <div className="section-label" style={{ marginBottom: '12px' }}>
@@ -267,18 +279,17 @@ export default function LocationMap({
         })}
       </div>
 
-      <div style={{ display: 'flex', gap: '12px' }}>
-        {/* Map */}
+      <div className="flex flex-col gap-3">
+        {/* Map full width */}
         <div
           style={{
-            flex: 1,
             position: 'relative',
             borderRadius: '12px',
             overflow: 'hidden',
             border: '1px solid var(--border)'
           }}
         >
-          <div ref={mapRef} style={{ width: '100%', height: '420px' }} />
+          <div ref={mapRef} style={{ width: '100%', height: '280px' }} />
 
           {/* Town + mature badge — bottom-left, clear of zoom controls */}
           <div
@@ -391,99 +402,90 @@ export default function LocationMap({
           )}
         </div>
 
-        {/* Amenity list panel */}
+        {/* POI grid below map */}
         {nearby && totalNearby > 0 && (
-          <div
-            style={{
-              width: '260px',
-              flexShrink: 0,
-              background: 'white',
-              border: '1px solid var(--border)',
-              borderRadius: '12px',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column'
-            }}
-          >
+          <div>
             <div
               style={{
-                padding: '12px 14px 8px',
+                marginBottom: '8px',
                 fontSize: '11px',
                 fontWeight: 700,
                 color: 'var(--ink-muted)',
                 textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                borderBottom: '1px solid var(--border)'
+                letterSpacing: '0.05em'
               }}
             >
               Nearby ({totalNearby})
             </div>
-            <div
-              style={{
-                flex: 1,
-                overflowY: 'auto',
-                maxHeight: '376px'
-              }}
-            >
-              {Object.entries(nearby)
-                .filter(
-                  ([cat]) =>
-                    activeCategory === 'all' || activeCategory === cat
-                )
-                .map(([cat, items]) =>
-                  items.map((item, idx) => {
-                    const key = `${cat}-${idx}`
-                    const isActive = selectedItem === key
-                    return (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {gridItems.map(({ cat, item, key }) => {
+                const isActive = selectedItem === key
+                return (
+                  <div
+                    key={key}
+                    onClick={() => handleSidebarClick(key)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        handleSidebarClick(key)
+                      }
+                    }}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '10px',
+                      border: `1px solid var(--border)`,
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      background: isActive
+                        ? `${CATEGORY_STYLES[cat]?.border || '#4a7c6f'}12`
+                        : 'white',
+                      boxShadow: isActive ? '0 0 0 2px rgba(74, 124, 111, 0.35)' : 'none',
+                      transition: 'all 0.15s ease',
+                      minWidth: 0
+                    }}
+                  >
+                    <span style={{ fontSize: '14px', flexShrink: 0, marginTop: '1px' }}>
+                      {CATEGORY_STYLES[cat]?.icon || '📍'}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div
-                        key={key}
-                        onClick={() => handleSidebarClick(key)}
                         style={{
-                          padding: '8px 14px',
-                          borderBottom: '1px solid var(--border)',
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '8px',
-                          cursor: 'pointer',
-                          background: isActive ? `${CATEGORY_STYLES[cat]?.border || '#4a7c6f'}12` : 'transparent',
-                          borderLeft: isActive ? `3px solid ${CATEGORY_STYLES[cat]?.border || '#4a7c6f'}` : '3px solid transparent',
-                          transition: 'all 0.15s ease'
+                          fontSize: '11px',
+                          fontWeight: isActive ? 700 : 600,
+                          color: isActive
+                            ? CATEGORY_STYLES[cat]?.border || 'var(--ink)'
+                            : 'var(--ink)',
+                          lineHeight: '1.3',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical'
+                        }}
+                        title={item.name}
+                      >
+                        {item.name}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '10px',
+                          color: 'var(--ink-muted)',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          marginTop: '2px'
                         }}
                       >
-                        <span style={{ fontSize: '16px', flexShrink: 0, marginTop: '1px' }}>
-                          {CATEGORY_STYLES[cat]?.icon || '📍'}
-                        </span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div
-                            style={{
-                              fontSize: '12px',
-                              fontWeight: isActive ? 700 : 600,
-                              color: isActive ? (CATEGORY_STYLES[cat]?.border || 'var(--ink)') : 'var(--ink)',
-                              lineHeight: '1.3',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}
-                            title={item.name}
-                          >
-                            {item.name}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: '11px',
-                              color: 'var(--ink-muted)',
-                              fontFamily: 'JetBrains Mono, monospace'
-                            }}
-                          >
-                            {item.dist_m >= 1000
-                              ? `${(item.dist_m / 1000).toFixed(1)} km`
-                              : `${item.dist_m}m`}
-                          </div>
-                        </div>
+                        {item.dist_m >= 1000
+                          ? `${(item.dist_m / 1000).toFixed(1)} km`
+                          : `${item.dist_m}m`}
                       </div>
-                    )
-                  })
-                )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

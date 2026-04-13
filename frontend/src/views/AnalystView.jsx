@@ -58,29 +58,10 @@ const FEATURE_LABELS = {
   top_school_within_2km:                  'Top School within 2km',
 }
 
-const CONDITION_MAP = {
-  'mrt=walking(<0.5km)':    '🚇 Walking distance to MRT',
-  'mrt=near(0.5-1km)':      '🚇 Near an MRT (0.5–1km)',
-  'mrt=far(>1km)':          '🚇 Far from MRT (>1km)',
-  'lease=long(>70yr)':      '📅 Long remaining lease (>70 yrs)',
-  'lease=medium(50-70yr)':  '📅 Medium lease (50–70 yrs)',
-  'lease=short(<50yr)':     '📅 Short lease (<50 yrs)',
-  'area=small(<70sqm)':     '📐 Small flat (<70 sqm)',
-  'area=medium(70-100sqm)': '📐 Medium flat (70–100 sqm)',
-  'area=large(>100sqm)':    '📐 Large flat (>100 sqm)',
-  'storey=low(1-5)':        '🏢 Low floor (1–5)',
-  'storey=mid(6-12)':       '🏢 Mid floor (6–12)',
-  'storey=high(>12)':       '🏢 High floor (>12)',
-  'price=budget(<350k)':    '💚 Budget price range (<$350k)',
-  'price=mid(350-550k)':    '💛 Mid price range ($350–550k)',
-  'price=premium(>550k)':   '🔴 Premium price range (>$550k)',
-  'mature_estate=yes':      '🏘️ Mature estate',
-  'mature_estate=no':       '🌱 Non-mature estate',
-}
-
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-const translateCondition = (cond) => CONDITION_MAP[cond] || cond
+const translateCondition = (cond, labels) =>
+  (labels && labels[cond]) || cond
 
 const confidenceLabel = (conf) => {
   if (conf >= 0.85) return { label: 'Very reliable', color: '#16a34a' }
@@ -155,13 +136,17 @@ function ShapTooltip({ active, payload }) {
   )
 }
 
-function RuleCard({ rule }) {
+function RuleCard({ rule, conditionLabels }) {
   const conf = confidenceLabel(rule.confidence)
 
   // Apriori rule: has if_conditions + then (translateable condition strings)
   if (rule.source === 'apriori') {
-    const ifParts   = rule.if_conditions.map(translateCondition)
-    const thenParts = rule.then.map(translateCondition)
+    const ifParts = rule.if_conditions.map((c) =>
+      translateCondition(c, conditionLabels)
+    )
+    const thenParts = rule.then.map((c) =>
+      translateCondition(c, conditionLabels)
+    )
     return (
       <div style={{
         background: 'white', borderRadius: '14px', padding: '18px 20px',
@@ -302,6 +287,7 @@ export default function AnalystView() {
   const [trends,     setTrends]     = useState(null)
   const [trendsTown, setTrendsTown] = useState('')
   const [shap,       setShap]       = useState(null)
+  const [shapCluster, setShapCluster] = useState('')
   const [rules,      setRules]      = useState(null)
   const [activeTab,  setActiveTab]  = useState('all')
   const [modelStats, setModelStats] = useState([])
@@ -310,7 +296,12 @@ export default function AnalystView() {
   useEffect(() => {
     ;(async () => {
       try {
-        const [t, s, r, m] = await Promise.all([getTrends(), getGlobalSHAP(), getRules(), getModelMeta()])
+        const [t, s, r, m] = await Promise.all([
+          getTrends(),
+          getGlobalSHAP(),
+          getRules(),
+          getModelMeta()
+        ])
         setTrends(t)
         setShap(s)
         setRules(r)
@@ -337,6 +328,26 @@ export default function AnalystView() {
         .reverse()          // bottom-to-top so highest is at top of horizontal chart
     : []
 
+  const shapTop10 = shap
+    ? Object.entries(shap.shap_importance)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 10)
+        .map(([feature, value]) => ({
+          feature,
+          label: FEATURE_LABELS[feature] || feature,
+          value: Math.round(value)
+        }))
+    : []
+
+  const availableClusters = shap?.available_clusters ?? []
+
+  const formatSGDCompact = (v) => {
+    const n = Number(v) || 0
+    if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
+    if (Math.abs(n) >= 1_000) return `$${(n / 1_000).toFixed(0)}k`
+    return `$${Math.round(n).toLocaleString()}`
+  }
+
   // Merge + tag rules
   const allRules = [
     ...(rules?.apriori   ?? []),
@@ -346,6 +357,22 @@ export default function AnalystView() {
     activeTab === 'all'
       ? allRules
       : allRules.filter((r) => r.source === activeTab)
+
+  const conditionLabels = rules?.metadata?.condition_labels || null
+
+  const ruleTokens = rules
+    ? [
+        ...(rules?.apriori ?? []).flatMap((r) => [
+          ...(r.if_conditions ?? []),
+          ...(r.then ?? [])
+        ]),
+        ...(rules?.surrogate ?? []).flatMap((r) => r.conditions ?? [])
+      ]
+    : []
+
+  const unknownRuleTokens = conditionLabels
+    ? Array.from(new Set(ruleTokens.filter((t) => t && !conditionLabels[t])))
+    : []
 
   const cardBase = {
     background: 'white', borderRadius: '16px', padding: '24px',
@@ -445,7 +472,7 @@ export default function AnalystView() {
       {/* ══ SECTION 3 — GLOBAL SHAP ═════════════════════════════════════ */}
       <div style={{ ...cardBase, marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between',
-          alignItems: 'flex-start', marginBottom: '20px' }}>
+          alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h3 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: 700, color: '#111827' }}>
               🔍 What Drives HDB Prices?
@@ -454,26 +481,111 @@ export default function AnalystView() {
               Features ranked by average impact on predicted price (SHAP values)
             </p>
           </div>
-          <IRSTag type="Model-Based" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <select
+              style={{
+                fontSize: '12px',
+                padding: '6px 10px',
+                borderRadius: '8px',
+                border: '1px solid #e5e7eb',
+                background: 'white',
+                color: '#374151',
+                fontFamily: 'Inter, sans-serif',
+              }}
+              value={shapCluster}
+              onChange={async (e) => {
+                const v = e.target.value
+                setShapCluster(v)
+                const cid = v === '' ? null : Number(v)
+                const res = await getGlobalSHAP(cid)
+                setShap(res)
+              }}
+              disabled={!shap || !availableClusters.length}
+            >
+              <option value="">Overall</option>
+              {availableClusters.map((k) => (
+                <option key={k} value={k}>
+                  Cluster {k}
+                </option>
+              ))}
+            </select>
+            {shap?.base_value != null && (
+              <div
+                style={{
+                  background: '#f3f4f6',
+                  color: '#374151',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  padding: '5px 10px',
+                  borderRadius: '999px',
+                  border: '1px solid #e5e7eb',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Baseline: {formatSGDCompact(shap.base_value)}
+              </div>
+            )}
+            <IRSTag type="Model-Based" />
+          </div>
         </div>
         {!shap ? (
           <LoadingSpinner label="Loading feature importance..." />
         ) : (
-          <ResponsiveContainer width="100%" height={shapData.length * 34 + 20}>
-            <BarChart data={shapData} layout="vertical"
-              margin={{ top: 0, right: 60, bottom: 0, left: 140 }}>
-              <XAxis type="number"
-                tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                tick={{ fontSize: 11, fill: '#9ca3af' }}
-                axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="label" width={136}
-                tick={{ fontSize: 12, fill: '#374151', fontWeight: 500 }}
-                axisLine={false} tickLine={false} />
-              <Tooltip content={<ShapTooltip />} />
-              <Bar dataKey="value" fill="#22c55e" radius={[0, 4, 4, 0]}
-                maxBarSize={22} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '16px' }}>
+            <div>
+              <ResponsiveContainer width="100%" height={shapData.length * 34 + 20}>
+                <BarChart data={shapData} layout="vertical"
+                  margin={{ top: 0, right: 60, bottom: 0, left: 140 }}>
+                  <XAxis type="number"
+                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                    tick={{ fontSize: 11, fill: '#9ca3af' }}
+                    axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="label" width={136}
+                    tick={{ fontSize: 12, fill: '#374151', fontWeight: 500 }}
+                    axisLine={false} tickLine={false} />
+                  <Tooltip content={<ShapTooltip />} />
+                  <Bar dataKey="value" fill="#22c55e" radius={[0, 4, 4, 0]}
+                    maxBarSize={22} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div
+              style={{
+                background: '#f9fafb',
+                border: '1px solid #eef2f7',
+                borderRadius: '12px',
+                padding: '14px 14px'
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#111827' }}>
+                Feature importance (Top 10)
+              </div>
+              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                Average absolute contribution vs the SHAP baseline.
+              </div>
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {shapTop10.map((f, i) => (
+                  <div key={f.feature} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '18px', fontSize: '11px', color: '#9ca3af', fontWeight: 700 }}>
+                      {i + 1}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', fontWeight: 650, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {f.label}
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#9ca3af', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {f.feature}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#166534' }}>
+                      {formatSGDCompact(f.value)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
@@ -492,6 +604,36 @@ export default function AnalystView() {
           </div>
           <IRSTag type="Rule-Based" />
         </div>
+
+        {rules && (
+          <div
+            style={{
+              background: '#f9fafb',
+              border: '1px solid #eef2f7',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              marginBottom: '14px'
+            }}
+          >
+            <div style={{ fontSize: '12px', fontWeight: 800, color: '#111827' }}>
+              Rules health
+            </div>
+            <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+              {conditionLabels
+                ? `All rule tokens are labeled (unknown: ${unknownRuleTokens.length}).`
+                : 'Condition labels unavailable; showing raw tokens.'}
+            </div>
+            {!!unknownRuleTokens.length && (
+              <div style={{ marginTop: '8px', fontSize: '11px', color: '#b45309' }}>
+                Unmapped tokens (sample):{' '}
+                <span style={{ fontFamily: 'monospace' }}>
+                  {unknownRuleTokens.slice(0, 6).join(', ')}
+                  {unknownRuleTokens.length > 6 ? '…' : ''}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tab toggle */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
@@ -517,7 +659,11 @@ export default function AnalystView() {
           <LoadingSpinner label="Loading rules..." />
         ) : (
           filteredRules.slice(0, 10).map((rule, i) => (
-            <RuleCard key={`${rule.source}-${i}`} rule={rule} />
+            <RuleCard
+              key={`${rule.source}-${i}`}
+              rule={rule}
+              conditionLabels={conditionLabels}
+            />
           ))
         )}
       </div>

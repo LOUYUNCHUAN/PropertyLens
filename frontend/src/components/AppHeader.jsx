@@ -3,6 +3,7 @@ import { Search, Bell, Settings } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import ThemeToggle from '@/components/ThemeToggle.jsx'
 
 const PATH_TITLES = {
   '/dashboard': 'Dashboard',
@@ -31,14 +32,15 @@ export default function AppHeader() {
   const title = titleForPath(location.pathname)
 
   return (
-    <header className="sticky top-0 z-30 flex h-20 shrink-0 items-center justify-between border-b border-border/50 bg-background px-8">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+    <header className="z-30 flex h-[4.5rem] shrink-0 items-center justify-between border-b border-border/60 bg-background/80 px-8 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
+      <h1 className="font-display text-display-sm tracking-tight text-foreground">{title}</h1>
 
       <div className="flex items-center gap-2">
         <span className="mr-2 hidden items-center gap-1.5 text-xs font-medium text-muted-foreground sm:inline-flex">
-          <span className="h-2 w-2 rounded-full bg-primary" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-primary shadow-[0_0_8px_oklch(0.58_0.15_145/0.6)]" />
           API live
         </span>
+        <ThemeToggle />
         <Button
           type="button"
           variant="ghost"
@@ -68,7 +70,7 @@ export default function AppHeader() {
           <Bell className="h-5 w-5" />
         </Button>
 
-        <div className="ml-2 flex items-center gap-2 border-l border-border pl-4">
+        <div className="ml-2 flex items-center gap-2 border-l border-border/80 pl-4">
           <Avatar className="h-10 w-10 ring-2 ring-border">
             <AvatarFallback className="bg-muted font-medium text-muted-foreground">
               {(displayName || username)?.[0]?.toUpperCase() || 'U'}

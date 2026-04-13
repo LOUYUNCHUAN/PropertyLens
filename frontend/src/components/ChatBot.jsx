@@ -21,7 +21,6 @@ export default function ChatBot() {
     setInput('')
     setMessages((prev) => [...prev, { role: 'user', text: userText }])
 
-    // Basic entity extraction from the question
     const lower = userText.toLowerCase()
     const towns = TOWNS.filter((t) =>
       lower.includes(t.toLowerCase().replace('/', ' '))
@@ -95,7 +94,6 @@ export default function ChatBot() {
       }
       parser.flush()
 
-      // Attach simple entity chips once complete
       if (towns.length || flatType) {
         setMessages((prev) => {
           const i = prev.length - 1
@@ -123,94 +121,28 @@ export default function ChatBot() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        style={{
-          position: 'fixed',
-          right: 24,
-          bottom: 24,
-          width: 56,
-          height: 56,
-          borderRadius: '999px',
-          border: 'none',
-          background: 'var(--green-500)',
-          color: '#fff',
-          boxShadow: '0 10px 25px rgba(34,197,94,0.55)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 24,
-          animation: 'pulse 2.2s infinite'
-        }}
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full border-0 bg-primary text-xl font-semibold text-primary-foreground shadow-lg shadow-primary/40 animate-pulse"
+        aria-label="Open chat"
       >
         ?
       </button>
 
       {open && (
         <div
-          style={{
-            position: 'fixed',
-            right: 16,
-            bottom: 96,
-            width: 'min(calc(100vw - 32px), 400px)',
-            maxWidth: 'min(calc(100vw - 32px), 400px)',
-            maxHeight: 'min(520px, calc(100vh - 120px))',
-            background: 'var(--bg-card)',
-            borderRadius: 20,
-            boxShadow: 'var(--shadow-lg)',
-            border: '1px solid var(--border)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            zIndex: 50,
-            boxSizing: 'border-box'
-          }}
+          className="fixed bottom-24 right-4 z-50 flex max-h-[min(520px,calc(100vh-120px))] w-[min(calc(100vw-32px),400px)] flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg ring-1 ring-white/10"
+          style={{ boxSizing: 'border-box' }}
         >
-          <div
-            style={{
-              padding: '12px 16px',
-              borderBottom: '1px solid var(--border)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}
-          >
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600
-                }}
-              >
-                Ask HDB ResaleXAI
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: 'var(--text-secondary)'
-                }}
-              >
+              <div className="text-[13px] font-semibold text-foreground">Ask HDB ResaleXAI</div>
+              <div className="text-[11px] text-muted-foreground">
                 Local LLM + rules / SHAP context
               </div>
             </div>
-            <span
-              style={{
-                fontSize: 10,
-                color: 'var(--text-muted)'
-              }}
-            >
-              beta
-            </span>
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">beta</span>
           </div>
 
-          <div
-            style={{
-              padding: '8px 12px',
-              display: 'flex',
-              gap: 6,
-              flexWrap: 'wrap',
-              borderBottom: '1px solid var(--border)'
-            }}
-          >
+          <div className="flex flex-wrap gap-1.5 border-b border-border px-3 py-2">
             {[
               'Why is this flat priced this way?',
               'Show rules for 4-room in Bedok',
@@ -222,61 +154,29 @@ export default function ChatBot() {
                 onClick={() => {
                   sendMessage(null, q)
                 }}
-                style={{
-                  borderRadius: 999,
-                  border: '1px solid var(--border)',
-                  padding: '4px 8px',
-                  fontSize: 11,
-                  background: '#f9fafb',
-                  cursor: 'pointer'
-                }}
+                className="cursor-pointer rounded-full border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
               >
                 {q}
               </button>
             ))}
           </div>
 
-          <div
-            style={{
-              flex: 1,
-              minHeight: 0,
-              padding: '10px 12px',
-              overflowX: 'hidden',
-              overflowY: 'auto',
-              fontSize: 13,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8
-            }}
-          >
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden p-3 text-[13px]">
             {messages.map((m, idx) => (
               <div
                 key={idx}
-                style={{
-                  alignSelf: m.role === 'user' ? 'flex-end' : 'stretch',
-                  maxWidth: '100%',
-                  minWidth: 0,
-                  width: m.role === 'assistant' ? '100%' : 'auto'
-                }}
+                className={
+                  m.role === 'user'
+                    ? 'flex max-w-full min-w-0 flex-col items-end'
+                    : 'flex max-w-full min-w-0 w-full flex-col items-stretch'
+                }
               >
                 <div
-                  style={{
-                    maxWidth: m.role === 'user' ? 'min(100%, 16rem)' : '100%',
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    background:
-                      m.role === 'user' ? 'var(--green-500)' : 'var(--bg-card)',
-                    color: m.role === 'user' ? '#fff' : 'var(--text-primary)',
-                    padding: '8px 10px',
-                    borderRadius:
-                      m.role === 'user'
-                        ? '14px 14px 2px 14px'
-                        : '14px 14px 14px 2px',
-                    border:
-                      m.role === 'user'
-                        ? 'none'
-                        : '1px solid rgba(148, 163, 184, 0.5)'
-                  }}
+                  className={
+                    m.role === 'user'
+                      ? 'max-w-[min(100%,16rem)] min-w-0 overflow-hidden rounded-[14px_14px_2px_14px] bg-primary px-2.5 py-2 text-primary-foreground'
+                      : 'max-w-full min-w-0 overflow-hidden rounded-[14px_14px_14px_2px] border border-border bg-muted/30 px-2.5 py-2 text-foreground'
+                  }
                 >
                   {m.role === 'assistant' ? (
                     <ChatMarkdown text={m.text} />
@@ -285,24 +185,11 @@ export default function ChatBot() {
                   )}
                 </div>
                 {m.role === 'assistant' && (m.sources || m.entities) && (
-                  <div
-                    style={{
-                      marginTop: 4,
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: 4
-                    }}
-                  >
+                  <div className="mt-1 flex flex-wrap gap-1">
                     {m.sources?.map((s) => (
                       <span
                         key={s}
-                        style={{
-                          fontSize: 10,
-                          padding: '2px 6px',
-                          borderRadius: 999,
-                          background: 'var(--blue-100)',
-                          color: 'var(--blue-500)'
-                        }}
+                        className="rounded-full bg-blue-light px-1.5 py-0.5 text-[10px] text-blue-sg"
                       >
                         {s}
                       </span>
@@ -310,27 +197,13 @@ export default function ChatBot() {
                     {m.entities?.towns?.map((t) => (
                       <span
                         key={`town-${t}`}
-                        style={{
-                          fontSize: 10,
-                          padding: '2px 6px',
-                          borderRadius: 999,
-                          background: '#e5e7eb',
-                          color: '#374151'
-                        }}
+                        className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground"
                       >
                         Town: {t}
                       </span>
                     ))}
                     {m.entities?.flatType && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: '2px 6px',
-                          borderRadius: 999,
-                          background: '#e5e7eb',
-                          color: '#374151'
-                        }}
-                      >
+                      <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
                         Flat type: {m.entities.flatType}
                       </span>
                     )}
@@ -339,37 +212,26 @@ export default function ChatBot() {
               </div>
             ))}
             {loading && (
-              <div
-                style={{
-                  fontSize: 11,
-                  color: 'var(--text-muted)'
-                }}
-              >
-                Typing<span style={{ animation: 'blink 1.2s infinite' }}>…</span>
+              <div className="text-[11px] text-muted-foreground">
+                Typing<span className="animate-blink">…</span>
               </div>
             )}
           </div>
 
           <form
             onSubmit={sendMessage}
-            style={{
-              padding: '10px 12px',
-              borderTop: '1px solid var(--border)',
-              display: 'flex',
-              gap: 8
-            }}
+            className="flex gap-2 border-t border-border p-3"
           >
             <input
-              className="input-base"
+              className="input-base flex-1"
               placeholder="Ask about HDB resale…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />
             <button
               type="submit"
-              className="btn-primary"
+              className="btn-primary shrink-0 px-4"
               disabled={loading}
-              style={{ paddingInline: 16 }}
             >
               Send
             </button>
@@ -379,4 +241,3 @@ export default function ChatBot() {
     </>
   )
 }
-

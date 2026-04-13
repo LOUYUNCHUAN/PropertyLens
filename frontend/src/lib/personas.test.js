@@ -4,6 +4,7 @@ import {
   investorFundamentalsSignal,
   investorScore,
   investorTag,
+  familyScore,
   commuterScore,
   commuterTag
 } from './personas.js'
@@ -130,16 +131,20 @@ describe('COM-1 commuter MRT sign', () => {
 })
 
 describe('COM-2 commuter highway term removed', () => {
-  it('score depends only on MRT SHAP; highway SHAP does not change score', () => {
+  it('does not penalize commuter-friendly negative highway SHAP', () => {
     const base = { shap_values: { dist_to_mrt_m: 1000 } }
     const withHighwayNeg = {
       shap_values: { dist_to_mrt_m: 1000, dist_to_highway_m: -5000 }
     }
+    expect(commuterScore(base)).toBe(commuterScore(withHighwayNeg))
+  })
+
+  it('penalizes only positive highway SHAP (sign-correct)', () => {
+    const base = { shap_values: { dist_to_mrt_m: 1000 } }
     const withHighwayPos = {
       shap_values: { dist_to_mrt_m: 1000, dist_to_highway_m: 5000 }
     }
-    expect(commuterScore(base)).toBe(commuterScore(withHighwayNeg))
-    expect(commuterScore(base)).toBe(commuterScore(withHighwayPos))
+    expect(commuterScore(withHighwayPos)).toBeLessThan(commuterScore(base))
   })
 
   it('commuterTag still works', () => {
@@ -148,5 +153,25 @@ describe('COM-2 commuter highway term removed', () => {
       nearby: { mrt: [{ name: 'NS1', dist_m: 300 }] }
     }
     expect(commuterTag(snap)).toMatch(/NS1/)
+  })
+})
+
+describe('FAM-1 family sign handling', () => {
+  it('higher score when school quality SHAP is positive vs negative (all else equal)', () => {
+    const positive = {
+      shap_values: {
+        primary_school_quality_1km_weighted: 800,
+        school_count_1km: 0,
+        primary_school_count_1km: 0
+      }
+    }
+    const negative = {
+      shap_values: {
+        primary_school_quality_1km_weighted: -800,
+        school_count_1km: 0,
+        primary_school_count_1km: 0
+      }
+    }
+    expect(familyScore(positive)).toBeGreaterThan(familyScore(negative))
   })
 })

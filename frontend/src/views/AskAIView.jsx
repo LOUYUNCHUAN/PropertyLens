@@ -70,8 +70,8 @@ export default function AskAIView() {
                 style={{
                   maxWidth: m.role === 'user' ? 'min(85%, 20rem)' : '100%',
                   background:
-                    m.role === 'user' ? 'var(--sage)' : 'var(--warm-white)',
-                  color: m.role === 'user' ? 'white' : 'var(--ink)',
+                    m.role === 'user' ? 'var(--primary)' : 'oklch(0.22 0.012 260)',
+                  color: m.role === 'user' ? 'var(--primary-foreground)' : 'var(--foreground)',
                   borderRadius:
                     m.role === 'user'
                       ? '16px 0 16px 16px'

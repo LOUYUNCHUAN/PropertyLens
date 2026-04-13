@@ -4,6 +4,19 @@
 
 const HIDDEN_SHAP = ['lat', 'lng', 'lon', 'latitude', 'longitude', 'years_since_2000']
 
+/** One-hot / encoded features — hide from top driver cards (Buyer Step 1). */
+export const EXCLUDE_PREFIXES = [
+  'town_',
+  'flat_type_',
+  'flat_model_',
+  'storey_range_'
+]
+
+function _featureExcludedFromDrivers(feature) {
+  const f = String(feature || '')
+  return EXCLUDE_PREFIXES.some((p) => f.startsWith(p))
+}
+
 /** Verdict from (asking - predicted) / predicted * 100 */
 export function verdictFromGapPct(gapPct) {
   const g = Number(gapPct)
@@ -256,7 +269,7 @@ export const DRIVER_LABELS = {
   mall_weighted_access_3km: {
     icon: '🛍️',
     label: 'Mall access',
-    format: () => '',
+    format: () => 'nearby malls weighted score',
     direction: 'more malls = higher price'
   },
   dist_to_foodcourt_m: {
@@ -312,6 +325,60 @@ export function buildDriverCards(shapValues, { topN = 4 } = {}) {
     }
   })
   return { cards, marketTimingShap: timing?.shap_value ?? 0, saleYearNote: timing?.feature_value }
+}
+
+/**
+ * Top-N SHAP drivers vs global mean |SHAP| (training average magnitude per feature).
+ * Excludes transaction_year (shown separately) and one-hot prefixes in EXCLUDE_PREFIXES.
+ */
+export function buildComparisonDrivers(
+  localShapResponse,
+  globalImportance = {},
+  { topN = 4 } = {}
+) {
+  const arr = Array.isArray(localShapResponse?.shap_values)
+    ? localShapResponse.shap_values.filter((v) => v && !HIDDEN_SHAP.includes(v.feature))
+    : []
+  const timing = arr.find((x) => x.feature === 'transaction_year')
+  const pool = arr.filter(
+    (x) => x.feature !== 'transaction_year' && !_featureExcludedFromDrivers(x.feature)
+  )
+  const sorted = [...pool].sort(
+    (a, b) => Math.abs(b.shap_value) - Math.abs(a.shap_value)
+  )
+  const top = sorted.slice(0, topN)
+  const gi =
+    globalImportance && typeof globalImportance === 'object' ? globalImportance : {}
+
+  const comparisonDrivers = top.map((x) => {
+    const globalMeanAbs = Number(gi[x.feature]) || 0
+    const localSigned = Number(x.shap_value) || 0
+    const difference = localSigned
+    const meta = DRIVER_LABELS[x.feature] || {
+      icon: '📊',
+      label: x.feature.replace(/_/g, ' '),
+      format: (v) => String(v)
+    }
+    const fv = x.feature_value
+    const featureText = meta.format ? meta.format(fv) : String(fv)
+    return {
+      feature: x.feature,
+      feature_value: fv,
+      icon: meta.icon,
+      label: meta.label,
+      featureText: featureText || meta.direction || '',
+      local_shap: localSigned,
+      global_shap: globalMeanAbs,
+      difference,
+      is_above_avg: difference > 0
+    }
+  })
+
+  return {
+    comparisonDrivers,
+    marketTimingShap: timing?.shap_value ?? 0,
+    saleYearNote: timing?.feature_value
+  }
 }
 
 /** Hide one-hot and internal dummy features from buyer-facing LIME list */

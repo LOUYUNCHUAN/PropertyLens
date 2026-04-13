@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, ChevronDown, ChevronRight } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import {
   predictPrice,
   getSHAP,
+  getGlobalSHAP,
   getCBR,
-  getLIME,
   getRules,
   geocodeAddress,
   getNearbyAmenities,
@@ -13,7 +13,6 @@ import {
 } from '../api/client.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
-import LocationMap from '../components/LocationMap.jsx'
 import BuyerEstimateInsights from '../components/buyer/BuyerEstimateInsights.jsx'
 import { TOWNS, getTownCoords } from '../constants/towns.js'
 import { Button } from '@/components/ui/button'
@@ -58,24 +57,6 @@ function normalizeStoreyRange(s) {
     .trim()
     .toUpperCase()
     .replace(/\s+TO\s+/gi, ' TO ')
-}
-
-/** One-line counts for collapsible nearby section (keys match LocationMap / API). */
-function nearbyAmenitySummary(nearby) {
-  if (!nearby || typeof nearby !== 'object') return 'Map loads after estimate'
-  const mrt =
-    (Array.isArray(nearby.mrt) ? nearby.mrt.length : 0) +
-    (Array.isArray(nearby.lrt) ? nearby.lrt.length : 0)
-  const schools = Array.isArray(nearby.school) ? nearby.school.length : 0
-  const hawker = Array.isArray(nearby.hawker) ? nearby.hawker.length : 0
-  const mall = Array.isArray(nearby.mall) ? nearby.mall.length : 0
-  if (mrt + schools + hawker + mall === 0) return 'No POIs in range · expand for map'
-  const parts = []
-  if (mrt) parts.push(`${mrt} MRT/LRT`)
-  if (schools) parts.push(`${schools} schools`)
-  if (hawker) parts.push(`${hawker} hawkers`)
-  if (mall) parts.push(`${mall} malls`)
-  return parts.join(' · ')
 }
 
 /** @deprecated Use buildHybridFlatPayload from @/lib/hybridFlatPayload.js */
@@ -146,6 +127,7 @@ export default function BuyerView() {
   const [savedFlatPayload, setSavedFlatPayload] = useState(null)
   const [prediction, setPrediction] = useState(null)
   const [shap, setShap] = useState(null)
+  const [globalShapImportance, setGlobalShapImportance] = useState({})
   const [cbr, setCbr] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -154,11 +136,9 @@ export default function BuyerView() {
   const [shortlistLoading, setShortlistLoading] = useState(false)
   const [shortlistMsg, setShortlistMsg] = useState(null)
   const [showResults, setShowResults] = useState(false)
-  const [nearbyExpanded, setNearbyExpanded] = useState(false)
+  const [estimateKey, setEstimateKey] = useState(0)
   const [rulesPayload, setRulesPayload] = useState(null)
-  const [limeResult, setLimeResult] = useState(null)
-  const [limeLoading, setLimeLoading] = useState(false)
-  const [limeError, setLimeError] = useState(null)
+  const [formCollapsed, setFormCollapsed] = useState(false)
 
   const listingAsNumber = useMemo(() => {
     const raw = String(listingPrice ?? '').replace(/,/g, '').trim()
@@ -184,31 +164,54 @@ export default function BuyerView() {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  function validateBuyerForm() {
+    if (!form.block?.trim() || !form.street_name?.trim()) {
+      setError(
+        'Enter block number and street name so we can look up this flat in our records.'
+      )
+      return false
+    }
+    if (!form.storey_range?.trim()) {
+      setError(
+        'Choose a storey band below or enter a custom range (e.g. 07 TO 09).'
+      )
+      return false
+    }
+    if (!/^\d{4}-\d{2}$/.test((form.sale_month || '').trim())) {
+      setError('Sale month must be YYYY-MM (e.g. 2026-04).')
+      return false
+    }
+    setError(null)
+    return true
+  }
+
   const runEstimate = async (flatPayload) => {
     setLoading(true)
     setShowResults(true)
     setError(null)
     setPrediction(null)
     setShap(null)
+    setGlobalShapImportance({})
     setCbr(null)
     setGeocodeResult(null)
     setNearbyResult(null)
     setSavedFlatPayload(flatPayload)
-    setNearbyExpanded(false)
-    setLimeResult(null)
-    setLimeError(null)
 
     try {
-      const [predRes, shapRes, cbrRes] = await Promise.all([
+      const [predRes, shapRes, cbrRes, globalRes] = await Promise.all([
         predictPrice(flatPayload),
         getSHAP(flatPayload),
-        getCBR(flatPayload, 5)
+        getCBR(flatPayload, 5),
+        getGlobalSHAP().catch((e) => {
+          console.warn('global-shap failed:', e)
+          return { shap_importance: {} }
+        })
       ])
-
 
       setPrediction(predRes)
       setShap(shapRes)
       setCbr(cbrRes)
+      setGlobalShapImportance(globalRes?.shap_importance ?? {})
 
       const block = String(flatPayload.block || '').trim()
       let street = String(flatPayload.street_name || '').trim()
@@ -256,10 +259,14 @@ export default function BuyerView() {
       } catch (histErr) {
         console.warn('Could not save prediction history', histErr)
       }
+
+      setFormCollapsed(true)
+      setEstimateKey((k) => k + 1)
     } catch (err) {
       console.error(err)
       setError('Something went wrong while fetching the estimate.')
       setShowResults(false)
+      setFormCollapsed(false)
     } finally {
       setLoading(false)
     }
@@ -286,28 +293,6 @@ export default function BuyerView() {
       .then(setRulesPayload)
       .catch(() => setRulesPayload(null))
   }, [])
-
-  useEffect(() => {
-    if (!savedFlatPayload || !prediction) return
-    let cancelled = false
-    setLimeLoading(true)
-    setLimeError(null)
-    getLIME(savedFlatPayload)
-      .then((r) => {
-        if (!cancelled) {
-          setLimeResult(r)
-        }
-      })
-      .catch((e) => {
-        if (!cancelled) setLimeError(e?.message || 'Could not load LIME explanation.')
-      })
-      .finally(() => {
-        if (!cancelled) setLimeLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [savedFlatPayload, prediction])
 
   const saveToShortlist = async () => {
     setShortlistMsg(null)
@@ -349,18 +334,21 @@ export default function BuyerView() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.block?.trim() || !form.street_name?.trim()) {
-      setError(
-        'Enter block number and street name so we can look up this flat in our records.'
-      )
-      return
+    if (!validateBuyerForm()) return
+    try {
+      await runEstimate(buildHybridBuyerApiPayload(form))
+    } catch (err) {
+      console.error(err)
+      setError('Something went wrong while fetching the estimate.')
+      setLoading(false)
+      setShowResults(false)
+      setFormCollapsed(false)
     }
-    if (!form.storey_range?.trim()) {
-      setError('Choose a storey band below or enter a custom range (e.g. 07 TO 09).')
-      return
-    }
-    if (!/^\d{4}-\d{2}$/.test((form.sale_month || '').trim())) {
-      setError('Sale month must be YYYY-MM (e.g. 2026-04).')
+  }
+
+  const handleReRunEstimate = async () => {
+    if (!validateBuyerForm()) {
+      setFormCollapsed(false)
       return
     }
     try {
@@ -370,6 +358,7 @@ export default function BuyerView() {
       setError('Something went wrong while fetching the estimate.')
       setLoading(false)
       setShowResults(false)
+      setFormCollapsed(false)
     }
   }
 
@@ -379,19 +368,73 @@ export default function BuyerView() {
     !hasPrediction || loading || shortlistLoading
 
   return (
-    <div className="min-h-screen space-y-6 bg-background pb-4">
+    <div className="space-y-6 bg-background pb-4">
       <Card className="border-border/60 shadow-sm">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Estimate fair value for this flat</CardTitle>
-          <CardDescription className="text-sm leading-relaxed">
-            We predict fair resale value using eight key inputs: address (block and street),
-            town, flat type, floor area, storey range, lease start year, and the month you
-            are pricing for. Location and amenity distances are filled from our data when
-            the address matches. Defaults mirror a sample listing (Blk 1 Lorong Lew Lian,
-            Serangoon).
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        {!(formCollapsed && prediction) && (
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg">Estimate fair value for this flat</CardTitle>
+            <CardDescription className="text-sm leading-relaxed">
+              We predict fair resale value using eight key inputs: address (block and street),
+              town, flat type, floor area, storey range, lease start year, and the month you
+              are pricing for. Location and amenity distances are filled from our data when
+              the address matches. Defaults mirror a sample listing (Blk 1 Lorong Lew Lian,
+              Serangoon).
+            </CardDescription>
+          </CardHeader>
+        )}
+        <CardContent
+          className={
+            formCollapsed && prediction
+              ? 'space-y-5 pt-5'
+              : 'space-y-5 border-t border-border/60 pt-5'
+          }
+        >
+          {shortlistMsg && (
+            <div className="text-sm font-medium text-primary">{shortlistMsg}</div>
+          )}
+          {error && <div className="text-sm text-destructive">{error}</div>}
+
+          {formCollapsed && prediction ? (
+            <div className="flex flex-col gap-3 rounded-lg border border-border/80 bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-foreground">
+                <span className="font-semibold">
+                  Blk {form.block} {form.street_name}
+                </span>
+                <span className="text-muted-foreground">
+                  {' '}
+                  · {form.town} · {form.flat_type} · {form.floor_area_sqm} sqm · Lease start{' '}
+                  {form.lease_commence_date} · Sale month {form.sale_month}
+                  {listingAsNumber != null && (
+                    <>
+                      {' '}
+                      · Ask{' '}
+                      <span className="tabular-nums">
+                        ${listingAsNumber.toLocaleString()}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFormCollapsed(false)}
+                >
+                  Edit inputs
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleReRunEstimate}
+                  disabled={loading}
+                >
+                  {loading ? 'Estimating…' : 'Re-run estimate'}
+                </Button>
+              </div>
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
             <FieldGroup className="gap-5">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -570,12 +613,8 @@ export default function BuyerView() {
                 </Button>
               </div>
             </FieldGroup>
-
-            {shortlistMsg && (
-              <div className="text-sm font-medium text-primary">{shortlistMsg}</div>
-            )}
-            {error && <div className="text-sm text-destructive">{error}</div>}
           </form>
+          )}
         </CardContent>
       </Card>
 
@@ -592,8 +631,10 @@ export default function BuyerView() {
           {prediction && (
             <>
               <BuyerEstimateInsights
+                resultsKey={estimateKey}
                 prediction={prediction}
                 shap={shap}
+                globalShapImportance={globalShapImportance}
                 cbr={cbr}
                 flatForm={compareFlatForm}
                 savedFlatPayload={savedFlatPayload}
@@ -605,51 +646,16 @@ export default function BuyerView() {
                 listingInput={listingPrice}
                 setListingInput={setListingPrice}
                 rules={rulesPayload}
-                lime={limeResult}
-                limeLoading={limeLoading}
-                limeError={limeError}
                 saleMonthLabel={form.sale_month}
+                geocodeResult={geocodeResult}
+                nearbyResult={nearbyResult}
+                mapTown={form.town}
+                mapFlatType={form.flat_type}
+                mapFloorArea={form.floor_area_sqm}
+                mapStoreyRange={form.storey_range}
+                mapLeaseCommence={form.lease_commence_date}
+                mapSaleMonth={form.sale_month}
               />
-
-              <Card className="border-border/60 shadow-sm overflow-hidden">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40 transition-colors"
-                  onClick={() => setNearbyExpanded((e) => !e)}
-                  aria-expanded={nearbyExpanded}
-                >
-                  <div>
-                    <div className="text-sm font-semibold text-foreground">
-                      What&apos;s nearby
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {nearbyAmenitySummary(nearbyResult)}
-                    </div>
-                  </div>
-                  {nearbyExpanded ? (
-                    <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                  )}
-                </button>
-                {nearbyExpanded && (
-                  <CardContent className="pt-0 border-t border-border/60">
-                    <LocationMap
-                      geocode={geocodeResult}
-                      nearby={nearbyResult}
-                      locationContext={prediction?.location_context}
-                      town={form.town}
-                      flatType={form.flat_type}
-                      floorArea={form.floor_area_sqm}
-                      storeyMid={parseStoreyMid(form.storey_range)}
-                      remainingLease={remainingLeaseApprox(
-                        Number(form.lease_commence_date),
-                        form.sale_month || defaultSaleMonth()
-                      )}
-                    />
-                  </CardContent>
-                )}
-              </Card>
             </>
           )}
         </>

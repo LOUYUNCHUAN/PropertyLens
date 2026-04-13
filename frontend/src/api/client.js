@@ -80,8 +80,13 @@ export const getModelMeta = () =>
 export const getTownSummary = () =>
   API.get('/api/analytics/town-summary').then((r) => r.data)
 
-export const getGlobalSHAP = () =>
-  API.get('/api/analytics/global-shap').then((r) => r.data)
+export const getGlobalSHAP = (cluster_id) =>
+  API.get('/api/analytics/global-shap', {
+    params:
+      cluster_id == null || cluster_id === ''
+        ? {}
+        : { cluster_id }
+  }).then((r) => r.data)
 
 export const getTrends = (town) =>
   API.get('/api/analytics/trends', { params: town ? { town } : {} }).then(

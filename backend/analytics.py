@@ -4,12 +4,13 @@ analytics.py — /api/analytics/global-shap, /api/analytics/trends, /api/rules
 
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import JSONResponse
 import pandas as pd
 
 from models import TrendsResponse, TrendPoint, RulesResponse
 from main import state, ARTIFACTS_ROOT, FEATURE_LAYER_OUTPUTS, REPO_ROOT
+from constraints import CONDITION_LABELS
 
 router = APIRouter()
 
@@ -57,11 +58,51 @@ def _ensure_hdb_df() -> pd.DataFrame:
 
 
 @router.get("/analytics/global-shap")
-def global_shap():
-    """Return pre-computed global SHAP importance for Analyst view bar chart."""
+def global_shap(cluster_id: Optional[int] = Query(default=None, ge=0)):
+    """
+    Return pre-computed global SHAP importance for Analyst view.
+
+    - No cluster_id: overall mean(|SHAP|) for all rows.
+    - With cluster_id: cluster-specific mean(|SHAP|) and (optional) SHAP base_value.
+    """
+
+    # Overall (backwards compatible)
+    if cluster_id is None:
+        return {
+            "scope": "overall",
+            "cluster_id": None,
+            "base_value": None,
+            "shap_importance": state.global_shap,
+            "top_features": list(state.global_shap.keys())[:20],
+            "available_clusters": sorted(
+                [
+                    int(k)
+                    for k in (state.global_shap_by_cluster or {}).get("clusters", {}).keys()
+                    if str(k).isdigit()
+                ]
+            ),
+        }
+
+    # Cluster-specific (requires optional artifact)
+    payload = state.global_shap_by_cluster or {}
+    clusters = payload.get("clusters") or {}
+    key = str(cluster_id)
+    if key not in clusters:
+        raise HTTPException(
+            status_code=404,
+            detail="Cluster-specific global SHAP not available. Generate HYBRID_XAI_DIR/global_shap_by_cluster.json.",
+        )
+    c = clusters[key] or {}
+    shap_imp = c.get("shap_importance") or {}
     return {
-        "shap_importance": state.global_shap,
-        "top_features": list(state.global_shap.keys())[:20],
+        "scope": "cluster",
+        "cluster_id": cluster_id,
+        "base_value": c.get("base_value"),
+        "shap_importance": shap_imp,
+        "top_features": list(shap_imp.keys())[:20],
+        "available_clusters": sorted(
+            [int(k) for k in clusters.keys() if str(k).isdigit()]
+        ),
     }
 
 
@@ -182,5 +223,15 @@ def get_rules():
     return RulesResponse(
         apriori=state.rules["apriori"],
         surrogate=state.rules["surrogate"],
-        metadata=state.rules["metadata"],
+        metadata={
+            **(state.rules.get("metadata") or {}),
+            "condition_labels": CONDITION_LABELS,
+            "binning": {
+                "mrt": {"walking": "<0.5km", "near": "0.5–0.8km", "far": ">0.8km"},
+                "lease": {"short": "<50yr", "medium": "50–70yr (55–70yr preferred)", "long": ">70yr"},
+                "area": {"small": "<70sqm", "medium": "70–100sqm", "large": ">100sqm"},
+                "storey": {"low": "1–5", "mid": "6–12", "high": ">12"},
+                "price": {"budget": "<350k", "mid": "350–550k", "premium": ">550k"},
+            },
+        },
     )

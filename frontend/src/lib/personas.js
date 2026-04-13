@@ -51,6 +51,19 @@ function shapNormContrib(feature, raw, means) {
   return abs / Math.max(denom, SHAP_NORM_EPS)
 }
 
+function shapNormSignedContrib(feature, raw, means) {
+  const v = Number(raw) || 0
+  if (v === 0) return 0
+  const abs = Math.abs(v)
+  const mu = means[feature]
+  const denom =
+    mu != null && Number(mu) > SHAP_NORM_EPS
+      ? Number(mu)
+      : UNKNOWN_SHAP_FEATURE_SCALE
+  const norm = abs / Math.max(denom, SHAP_NORM_EPS)
+  return v < 0 ? -norm : norm
+}
+
 function totalNormalizedMass(shap, means) {
   let t = 0
   for (const [k, v] of Object.entries(shap)) {
@@ -124,9 +137,20 @@ export function familyScore(snap) {
   const schoolCountSHAP = Number(shap.school_count_1km ?? 0)
   const primaryCountSHAP = Number(shap.primary_school_count_1km ?? 0)
   return (
-    Math.abs(schoolQualitySHAP) * 0.6 +
-    Math.abs(schoolCountSHAP) * 0.25 +
-    Math.abs(primaryCountSHAP) * 0.15
+    shapNormSignedContrib(
+      'primary_school_quality_1km_weighted',
+      schoolQualitySHAP,
+      globalShapMeans
+    ) *
+      0.7 +
+    shapNormSignedContrib('school_count_1km', schoolCountSHAP, globalShapMeans) *
+      0.2 +
+    shapNormSignedContrib(
+      'primary_school_count_1km',
+      primaryCountSHAP,
+      globalShapMeans
+    ) *
+      0.1
   )
 }
 
@@ -143,8 +167,19 @@ export function familyTag(snap) {
 export function commuterScore(snap) {
   if (!snap?.shap_values) return 0
   const shap = snap.shap_values
-  const mrtSHAP = Number(shap.dist_to_mrt_m ?? 0)
-  return mrtSHAP
+  const mrt = shapNormSignedContrib(
+    'dist_to_mrt_m',
+    shap.dist_to_mrt_m ?? 0,
+    globalShapMeans
+  )
+  const highwayRaw = Number(shap.dist_to_highway_m ?? 0)
+  // Penalize only the sign case that indicates "highway proximity helps" (per terminal note),
+  // and never penalize the common negative-noise case commuters tolerate.
+  const highwayPenalty =
+    highwayRaw > 0
+      ? shapNormContrib('dist_to_highway_m', highwayRaw, globalShapMeans) * 0.2
+      : 0
+  return mrt - highwayPenalty
 }
 
 export function commuterTag(snap) {

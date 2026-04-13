@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import ThemeToggle from '@/components/ThemeToggle.jsx'
+import BrandMark from '@/components/BrandMark.jsx'
 
 export default function LoginView() {
   const { isLoggedIn, login } = useAuth()
@@ -77,21 +79,25 @@ export default function LoginView() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <Card className="w-full max-w-[420px] border-border/60 shadow-md">
+    <div className="hero-mesh relative flex min-h-screen items-center justify-center p-6">
+      <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
+        <ThemeToggle />
+      </div>
+      <Card className="w-full max-w-[420px] border-border/80 bg-card/95 shadow-lg ring-1 ring-border/60 backdrop-blur-sm dark:ring-white/10">
         <CardHeader className="space-y-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
-            P
-          </div>
-          <div>
-            <CardTitle className="text-2xl">
-              {mode === 'login' ? 'Welcome back' : 'Create an account'}
-            </CardTitle>
-            <CardDescription className="mt-2">
-              {mode === 'login'
-                ? 'Sign in with your PropertyLens account.'
-                : 'Register to save shortlists and history to your account.'}
-            </CardDescription>
+          <div className="flex flex-col items-center gap-4 text-center sm:items-start sm:text-left">
+            <span className="sr-only">PropertyLens</span>
+            <BrandMark variant="hero" />
+            <div>
+              <CardTitle className="font-display text-display-sm">
+                {mode === 'login' ? 'Welcome back' : 'Create an account'}
+              </CardTitle>
+              <CardDescription className="mt-2 text-base">
+                {mode === 'login'
+                  ? 'Sign in with your PropertyLens account.'
+                  : 'Register to save shortlists and history to your account.'}
+              </CardDescription>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -137,11 +143,11 @@ export default function LoginView() {
               />
             </div>
             {error && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <div className="rounded-md border border-destructive/40 bg-destructive/15 px-3 py-2 text-sm text-destructive">
                 {error}
               </div>
             )}
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full font-semibold" disabled={loading}>
               {loading
                 ? '…'
                 : mode === 'login'

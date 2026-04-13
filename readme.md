@@ -90,6 +90,45 @@ Training and feature engineering live under **`notebooks/`** (hybrid ensemble, X
 - **`backend/README.md`** — backend details, troubleshooting (e.g. `libomp` on macOS, LIME import errors).
 - **`docs/views-developer-guide.md`** — Buyer / Seller / Shortlist behaviour and API usage from the frontend.
 
+## Known Behaviours — SHAP Explanation
+
+### base_value varies by cluster
+
+The PropertyLens model is a Hybrid Cluster Ensemble with 3 clusters.
+Each cluster routes flats to a different XGBoost sub-model.
+When `shap.TreeExplainer` is run on a sub-model, the `expected_value`
+(base_value) it returns is the **average prediction of that specific
+cluster's training subset** — not the global average across all flats.
+
+Verified live results:
+
+| Flat profile | Cluster | base_value |
+|---|---|---|
+| Serangoon 3-room 64sqm | 0 or 1 | $421,327 |
+| Tampines 4-room 95sqm  | 0 or 1 | $421,327 |
+| Bishan 4-room 105sqm   | 0 or 1 | $421,327 |
+| Queenstown 5-room 121sqm | 2    | $528,700 |
+
+This means:
+- Clusters 0/1 contain lower-to-mid value flats (baseline ~$421k)
+- Cluster 2 contains higher-value flats (baseline ~$529k)
+- The baseline is the average price **within that cluster**, not nationally
+
+### Implication for the UI
+
+The BaselineContextPanel in Step 1 must NOT always label the baseline
+as \"national average\" — for cluster 2 flats the label would be
+misleading. Instead it uses a dynamic label based on the base_value
+threshold (see `BaselineContextPanel` in `frontend/src/components/buyer/BuyerEstimateInsights.jsx`).
+
+### How to identify which cluster a flat belongs to
+
+The cluster boundary is approximately base_value > $480,000.
+Flats routed to cluster 2 (high-value) have base_value ≈ $528,700.
+All other flats have base_value ≈ $421,327.
+
+If the model is retrained, these thresholds should be re-verified.
+
 ## Goals (product)
 
 - Predict HDB resale prices using transaction history, POIs, schools, and accessibility features.

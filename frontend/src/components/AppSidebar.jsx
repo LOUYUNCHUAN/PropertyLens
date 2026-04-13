@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Home, LineChart, Bug, ChevronDown } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import BrandMark from '@/components/BrandMark.jsx'
 
 const navigation = [
   {
@@ -60,24 +61,24 @@ export default function AppSidebar() {
   }, [pathname])
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-[260px] border-r border-border/50 bg-card">
+    <aside className="fixed left-0 top-0 z-40 h-screen w-[260px] border-r border-sidebar-border bg-sidebar">
       <div className="flex h-full flex-col">
         <Link
           to="/dashboard"
-          className="flex h-20 items-center gap-3 px-6 transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-lg"
+          className="flex h-[4.5rem] items-center gap-3 px-5 transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
           aria-label="PropertyLens — go to dashboard"
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
-            P
-          </div>
+          <BrandMark variant="sidebar" />
           <div className="min-w-0 text-left">
-            <div className="font-semibold tracking-tight text-foreground">PropertyLens</div>
+            <div className="font-display text-base font-semibold tracking-tight text-sidebar-foreground">
+              PropertyLens
+            </div>
             <div className="text-xs leading-snug text-muted-foreground">Fair, explainable pricing</div>
           </div>
         </Link>
 
-        <nav className="flex-1 overflow-y-auto px-4 py-2">
-          <div className="space-y-1">
+        <nav className="flex-1 overflow-y-auto px-3 py-2">
+          <div className="space-y-0.5">
             {navigation.map((item) => {
               const isGroupActive =
                 item.children?.some((c) => pathname === c.href) ?? false
@@ -93,10 +94,10 @@ export default function AppSidebar() {
                     end={item.href === '/dashboard'}
                     className={({ isActive: navActive }) =>
                       cn(
-                        'flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                        'relative flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
                         navActive
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                          ? 'bg-primary/15 text-primary shadow-sm ring-1 ring-primary/20'
+                          : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                       )
                     }
                   >
@@ -125,8 +126,8 @@ export default function AppSidebar() {
                     className={cn(
                       'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200',
                       isActive
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                        ? 'bg-primary/15 text-primary ring-1 ring-primary/15'
+                        : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                     )}
                     aria-expanded={open}
                   >
@@ -151,17 +152,17 @@ export default function AppSidebar() {
                   </button>
 
                   {open && item.children && (
-                    <div className="ml-9 mt-1 space-y-1 border-l border-border/60 pl-2">
+                    <div className="ml-9 mt-1 space-y-0.5 border-l border-sidebar-border pl-3">
                       {item.children.map((child) => (
                         <NavLink
                           key={child.href}
                           to={child.href}
                           className={({ isActive: navActive }) =>
                             cn(
-                              'block rounded-lg px-3 py-2 text-sm transition-colors',
+                              'block rounded-md px-3 py-2 text-sm transition-colors',
                               navActive
                                 ? 'font-medium text-primary'
-                                : 'text-muted-foreground hover:text-foreground'
+                                : 'text-muted-foreground hover:text-sidebar-foreground'
                             )
                           }
                         >

@@ -37,7 +37,11 @@ function StatCard({
   loading
 }) {
   const [hovered, setHovered] = useState(false)
-  const deltaColor = neutralDelta ? '#6b7280' : deltaUp ? '#16a34a' : '#dc2626'
+  const deltaColor = neutralDelta
+    ? 'var(--muted-foreground)'
+    : deltaUp
+      ? 'oklch(0.72 0.17 145)'
+      : 'oklch(0.65 0.2 25)'
   const arrow = neutralDelta ? '→' : deltaUp ? '↑' : '↓'
   return (
     <div
@@ -50,8 +54,8 @@ function StatCard({
         border: '1px solid var(--border)',
         borderLeft: '4px solid var(--green-500)',
         boxShadow: hovered
-          ? '0 2px 10px rgba(15, 23, 42, 0.06)'
-          : '0 1px 2px rgba(15, 23, 42, 0.04)',
+          ? '0 4px 20px oklch(0 0 0 / 0.25)'
+          : '0 1px 0 oklch(1 0 0 / 0.06) inset',
         transition: 'box-shadow 0.18s ease',
         cursor: 'default'
       }}
@@ -72,7 +76,7 @@ function StatCard({
         <div
           style={{
             height: '28px',
-            background: '#f3f4f6',
+            background: 'var(--muted)',
             borderRadius: '6px',
             marginBottom: '8px'
           }}
@@ -82,7 +86,7 @@ function StatCard({
           style={{
             fontSize: '26px',
             fontWeight: 800,
-            color: '#111827',
+            color: 'var(--foreground)',
             lineHeight: 1,
             marginBottom: '8px'
           }}
@@ -116,14 +120,14 @@ function BannerBtn({ label, primary, onClick }) {
       style={{
         background: primary
           ? hovered
-            ? 'var(--green-50)'
-            : '#ffffff'
+            ? 'oklch(0.58 0.15 145 / 0.2)'
+            : 'var(--card)'
           : hovered
-          ? '#f9fafb'
-          : '#ffffff',
-        color: primary ? 'var(--green-600)' : 'var(--text-primary)',
+          ? 'var(--muted)'
+          : 'var(--card)',
+        color: primary ? 'var(--primary)' : 'var(--foreground)',
         border: primary
-          ? '1.5px solid var(--green-600)'
+          ? '1.5px solid var(--primary)'
           : '1px solid var(--border)',
         borderRadius: 10,
         padding: '11px 22px',
@@ -160,9 +164,9 @@ function TownRow({ t, i }) {
         borderRadius: '8px',
         marginBottom: '2px',
         background: hovered
-          ? 'var(--green-50)'
+          ? 'oklch(0.58 0.15 145 / 0.12)'
           : i % 2 === 0
-          ? '#f9fafb'
+          ? 'var(--muted)'
           : 'transparent',
         transition: 'background 0.14s',
         cursor: 'default'
@@ -172,7 +176,7 @@ function TownRow({ t, i }) {
         <span
           style={{
             fontSize: '11px',
-            color: '#d1d5db',
+            color: 'var(--muted-foreground)',
             width: '18px',
             textAlign: 'right',
             fontWeight: 600
@@ -193,7 +197,7 @@ function TownRow({ t, i }) {
           style={{
             fontSize: '12px',
             fontWeight: 500,
-            color: '#111827'
+            color: 'var(--foreground)'
           }}
         >
           {toTitle(t.town)}
@@ -204,7 +208,7 @@ function TownRow({ t, i }) {
           style={{
             fontSize: '12px',
             fontWeight: 700,
-            color: '#111827'
+            color: 'var(--foreground)'
           }}
         >
           S${(t.price_current / 1000).toFixed(0)}k
@@ -228,10 +232,10 @@ function TownRow({ t, i }) {
 
 function MoverCard({ t, hot }) {
   const magnitude = Math.min(Math.abs(t.yoy_pct ?? 0) / 11, 1) * 100
-  const accent = hot ? '#dc2626' : '#2563eb'
-  const bgBar = hot ? '#fee2e2' : '#e0e7ff'
+  const accent = hot ? 'oklch(0.65 0.2 25)' : 'oklch(0.65 0.14 250)'
+  const bgBar = hot ? 'oklch(0.65 0.2 25 / 0.2)' : 'oklch(0.65 0.14 250 / 0.2)'
   const pillBg = hot ? 'var(--red-100)' : 'var(--blue-100)'
-  const pillColor = hot ? '#b91c1c' : '#1d4ed8'
+  const pillColor = hot ? 'oklch(0.72 0.18 25)' : 'oklch(0.75 0.12 250)'
   return (
     <div
       style={{
@@ -323,24 +327,25 @@ function PriceTooltip({ active, payload, label }) {
   return (
     <div
       style={{
-        background: 'white',
+        background: 'var(--popover)',
         borderRadius: '12px',
         padding: '12px 16px',
-        boxShadow: '0 2px 12px rgba(15, 23, 42, 0.08)',
+        boxShadow: '0 8px 32px oklch(0 0 0 / 0.45)',
         border: '1px solid var(--border)',
-        fontSize: '12px'
+        fontSize: '12px',
+        color: 'var(--foreground)'
       }}
     >
       <div
         style={{
           fontWeight: 700,
-          color: '#111827',
+          color: 'var(--foreground)',
           marginBottom: '4px'
         }}
       >
         {label}
       </div>
-      <div style={{ color: '#16a34a', fontWeight: 600 }}>
+      <div style={{ color: 'var(--primary)', fontWeight: 600 }}>
         Median: S${Number(payload[0].value).toLocaleString()}
       </div>
     </div>
@@ -449,7 +454,7 @@ export default function DashboardView() {
     background: 'var(--bg-card)',
     borderRadius: 12,
     border: '1px solid var(--border)',
-    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+    boxShadow: '0 1px 0 oklch(1 0 0 / 0.06) inset, 0 4px 24px oklch(0 0 0 / 0.2)',
     overflow: 'hidden'
   }
   const cardHead = {
@@ -464,7 +469,7 @@ export default function DashboardView() {
         style={{
           textAlign: 'center',
           padding: '80px 40px',
-          color: '#6b7280'
+          color: 'var(--muted-foreground)'
         }}
       >
         <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
@@ -675,15 +680,15 @@ export default function DashboardView() {
             </div>
             <div
               style={{
-                background: 'var(--amber-100)',
-                color: '#92400e',
+                background: 'oklch(0.78 0.14 65 / 0.2)',
+                color: 'oklch(0.88 0.12 65)',
                 fontSize: 10,
                 fontWeight: 700,
                 letterSpacing: '0.04em',
                 textTransform: 'uppercase',
                 padding: '5px 10px',
                 borderRadius: 999,
-                border: '1px solid #fde68a',
+                border: '1px solid oklch(0.78 0.14 65 / 0.35)',
                 whiteSpace: 'nowrap'
               }}
             >
@@ -695,7 +700,7 @@ export default function DashboardView() {
               style={{
                 ...cardBody,
                 height: 230,
-                background: '#f9fafb',
+                background: 'var(--muted)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -735,13 +740,13 @@ export default function DashboardView() {
                 </defs>
                 <XAxis
                   dataKey="year"
-                  tick={{ fontSize: 12, fill: '#9ca3af' }}
+                  tick={{ fontSize: 12, fill: 'oklch(0.55 0.02 260)' }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
                   tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                  tick={{ fontSize: 11, fill: '#9ca3af' }}
+                  tick={{ fontSize: 11, fill: 'oklch(0.55 0.02 260)' }}
                   axisLine={false}
                   tickLine={false}
                   domain={['auto', 'auto']}
@@ -768,8 +773,8 @@ export default function DashboardView() {
                   }}
                   activeDot={{
                     r: 6,
-                    fill: '#14532d',
-                    stroke: 'white',
+                    fill: 'oklch(0.75 0.16 145)',
+                    stroke: 'var(--card)',
                     strokeWidth: 2
                   }}
                 />
@@ -874,7 +879,7 @@ export default function DashboardView() {
                   maxHeight: '268px',
                   overflowY: 'auto',
                   scrollbarWidth: 'thin',
-                  scrollbarColor: '#e5e7eb transparent'
+                  scrollbarColor: 'var(--border) transparent'
                 }}
               >
                 {townStats.map((t, i) => (
@@ -960,7 +965,7 @@ export default function DashboardView() {
                 maxHeight: 'min(520px, 58vh)',
                 overflow: 'auto',
                 scrollbarWidth: 'thin',
-                scrollbarColor: '#e5e7eb transparent',
+                scrollbarColor: 'var(--border) transparent',
                 marginBottom: 16,
                 paddingRight: 4
               }}
@@ -986,7 +991,7 @@ export default function DashboardView() {
                     style={{
                       fontSize: '10px',
                       fontWeight: 400,
-                      color: '#9ca3af',
+                      color: 'var(--muted-foreground)',
                       textTransform: 'none',
                       letterSpacing: 0
                     }}
@@ -1003,7 +1008,7 @@ export default function DashboardView() {
                     paddingBottom: 8,
                     WebkitOverflowScrolling: 'touch',
                     scrollbarWidth: 'thin',
-                    scrollbarColor: '#e5e7eb transparent'
+                    scrollbarColor: 'var(--border) transparent'
                   }}
                 >
                   <div
@@ -1053,7 +1058,7 @@ export default function DashboardView() {
                     style={{
                       fontSize: '10px',
                       fontWeight: 400,
-                      color: '#9ca3af',
+                      color: 'var(--muted-foreground)',
                       textTransform: 'none',
                       letterSpacing: 0
                     }}
@@ -1070,7 +1075,7 @@ export default function DashboardView() {
                     paddingBottom: 8,
                     WebkitOverflowScrolling: 'touch',
                     scrollbarWidth: 'thin',
-                    scrollbarColor: '#e5e7eb transparent'
+                    scrollbarColor: 'var(--border) transparent'
                   }}
                 >
                   <div
