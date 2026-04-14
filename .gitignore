@@ -1,17 +1,58 @@
-01_data_layer/raw/
-01_data_layer/raw
-02_feature_layer/training/outputs/
-02_feature_layer/training/outputs
-03_ml_layer/training/outputs/
-03_ml_layer/training/outputs
-03_ml_layer/test/outputs/
-03_ml_layer/test/outputs
+# ── Environment & system ─────────────────────────────────────────────────────
+.env
 .DS_Store
 .ipynb_checkpoints/
-.env/
-venv/
 __pycache__/
-.env
+venv/
+.venv/
+
+# ── 01 Data layer — raw data (all excluded; sourced from OneMap/data.gov.sg) ──
+01_data_layer/raw/
+
+# ── 02 Feature layer outputs — data files excluded, metadata kept ─────────────
+# Kept:  feature_metadata_*.json, VERSION_MANIFEST.json
+# Excluded: CSV feature tables, parquet files
+02_feature_layer/training/outputs/*.csv
+02_feature_layer/training/outputs/*.parquet
+
+# ── hf_data — HuggingFace download cache (full mirror of outputs) ─────────────
 hf_data/
-03_ml_layer_hybrid/artifacts
+
+# ── 03 ML layer — model artefacts excluded, config/metadata JSON kept ─────────
+03_ml_layer_hybrid/artifacts/*.pkl
+03_ml_layer_hybrid/artifacts/*.pickle
+03_ml_layer_hybrid/artifacts/*.joblib
+03_ml_layer_hybrid/artifacts/*.parquet
+03_ml_layer_hybrid/artifacts/*.csv
+03_ml_layer_hybrid/artifacts/*.h5
+03_ml_layer_hybrid/artifacts/*.pt
+03_ml_layer_hybrid/artifacts/*.pth
+03_ml_layer_hybrid/artifacts/*.bin
+03_ml_layer_hybrid/artifacts/*.png
+03_ml_layer_hybrid/artifacts/*.jpg
+# Legacy path
+03_ml_layer/training/outputs/*.csv
+03_ml_layer/training/outputs/*.parquet
+03_ml_layer/test/outputs/*.csv
+03_ml_layer/test/outputs/*.parquet
+
+# ── 04 XAI layer — large SHAP/surrogate files excluded, metadata kept ─────────
+04_xai_layer/artifacts/*.parquet
+04_xai_layer/artifacts/*.csv
+04_xai_layer/artifacts/*.pkl
+04_xai_layer/artifacts/*.pickle
+
+# ── 05 Photo layer — model weights and image data excluded ────────────────────
 05_photo_layer/data/
+05_photo_layer/artifacts/*.h5
+05_photo_layer/artifacts/*.pt
+05_photo_layer/artifacts/*.pth
+05_photo_layer/artifacts/*.bin
+05_photo_layer/artifacts/*.parquet
+05_photo_layer/artifacts/*.csv
+
+# ── 06 Search layer — KB parquet and distance tables excluded, norm JSON kept ──
+# Kept:  search_norm_params_*.json
+# Excluded: property_knowledge_base_*.parquet, famous_school_distances_*.parquet
+06_search_layer/artifacts/*.parquet
+06_search_layer/artifacts/*.csv

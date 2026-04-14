@@ -1,0 +1,23 @@
+{
+  "n_clusters": 4,
+  "min_cluster_train": 5000,
+  "cluster_counts_train": {
+    "0": 17589,
+    "1": 108073,
+    "2": 3641,
+    "3": 74763
+  },
+  "cluster_counts_val": {
+    "0": 2234,
+    "1": 13319,
+    "2": 467,
+    "3": 11565
+  },
+  "cluster_counts_test": {
+    "0": 2560,
+    "1": 13490,
+    "2": 461,
+    "3": 12537
+  },
+  "n_test_rows_using_global_fallback": 461
+}
