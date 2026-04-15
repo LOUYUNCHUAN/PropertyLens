@@ -723,12 +723,18 @@ class PropertyKnowledgeBase:
         filters = filters or {}
 
         # --- Apply hard filters ---
+        def _str_filter(col, val):
+            """Accept either a single string or a list of strings for exact-match filtering."""
+            if isinstance(val, (list, tuple)):
+                return df[col].str.upper().isin([str(v).upper() for v in val])
+            return df[col].str.upper() == str(val).upper()
+
         if "flat_type" in filters:
-            df = df[df["flat_type"].str.upper() == str(filters["flat_type"]).upper()]
+            df = df[_str_filter("flat_type", filters["flat_type"])]
         if "town" in filters:
-            df = df[df["town"].str.upper() == str(filters["town"]).upper()]
+            df = df[_str_filter("town", filters["town"])]
         if "flat_model" in filters:
-            df = df[df["flat_model"].str.upper() == str(filters["flat_model"]).upper()]
+            df = df[_str_filter("flat_model", filters["flat_model"])]
         if "min_floor_area" in filters:
             df = df[df["floor_area_sqm"] >= float(filters["min_floor_area"])]
         if "max_resale_price" in filters:
@@ -999,9 +1005,9 @@ class PropertyKnowledgeBase:
 # Cypher query — all weight params default to 0.0; NULL filter params = no filter
 _CYPHER_SEARCH = """\
 MATCH (p:Property)
-WHERE ($flat_type    IS NULL OR p.flat_type    = $flat_type)
-  AND ($town         IS NULL OR p.town         = $town)
-  AND ($flat_model   IS NULL OR p.flat_model   = $flat_model)
+WHERE ($flat_type    IS NULL OR p.flat_type    IN $flat_type)
+  AND ($town         IS NULL OR p.town         IN $town)
+  AND ($flat_model   IS NULL OR p.flat_model   IN $flat_model)
   AND ($min_floor_area   IS NULL OR p.floor_area_sqm      >= $min_floor_area)
   AND ($max_resale_price IS NULL OR p.resale_price         <= $max_resale_price)
   AND ($min_lease_years  IS NULL OR p.lease_remaining_years >= $min_lease_years)
@@ -1104,14 +1110,22 @@ class Neo4jPropertySearch:
         # Build weight params — zero for unspecified dimensions
         weight_params = {f"w_{s}": active.get(s, 0.0) for s in self._score_cols}
 
+        def _to_list_or_none(val):
+            """Normalise string or list filter values for Cypher IN operator."""
+            if val is None:
+                return None
+            if isinstance(val, (list, tuple)):
+                return [str(v).upper() for v in val]
+            return [str(val).upper()]
+
         params = {
             **weight_params,
             "total_weight": total_w,
             "top_k": int(top_k),
-            # Filters — None means no filter in Cypher
-            "flat_type": filters.get("flat_type"),
-            "town": filters.get("town"),
-            "flat_model": filters.get("flat_model"),
+            # Filters — None means no filter in Cypher; lists used with IN operator
+            "flat_type": _to_list_or_none(filters.get("flat_type")),
+            "town": _to_list_or_none(filters.get("town")),
+            "flat_model": _to_list_or_none(filters.get("flat_model")),
             "min_floor_area": filters.get("min_floor_area"),
             "max_resale_price": filters.get("max_resale_price"),
             "min_lease_years": filters.get("min_lease_years"),

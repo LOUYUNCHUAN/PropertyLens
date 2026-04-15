@@ -13,10 +13,10 @@
 
 **Purpose:** Transform raw HDB data + geospatial/school enrichment into **ML-ready feature tables** with strict deduplication, categorical encoding, and temporal train/test splits.
 
-**Output Contract (as of 2026-04-12):**
-- **`hdb_feature_table_*.csv`** (263,004 rows × 77 cols) — Full deduplicated dataset
-- **`hdb_feature_train_*.csv`** (180,195 rows × 77 cols) — Train split (year < 2023)
-- **`hdb_feature_test_*.csv`** (82,809 rows × 77 cols) — Test split (year ≥ 2023)
+**Output Contract (as of 2026-04-15):**
+- **`hdb_feature_table_*.csv`** (263,004 rows × 86 cols) — Full deduplicated dataset
+- **`hdb_feature_train_*.csv`** (180,195 rows × 86 cols) — Train split (year < 2023)
+- **`hdb_feature_test_*.csv`** (82,809 rows × 86 cols) — Test split (year ≥ 2023)
 - **`feature_metadata_*.json`** — Schema/stats export (includes `dropped_features` key)
 
 **Location:** `training/outputs/` (or `hf_data/02_feature_layer/training/outputs/` if downloaded from HF)
@@ -25,7 +25,7 @@
 
 ---
 
-## 2. Feature Schema (77 total as of 2026-04-12)
+## 2. Feature Schema (86 total as of 2026-04-15)
 
 ### Target
 - `resale_price` — SGD (numeric, no nulls)
@@ -35,7 +35,7 @@
 - `month_dt` — Parsed datetime (YYYY-MM-DD)
 - `address_key` — Unique HDB block identifier
 
-### Core Engineered Features (22)
+### Core Engineered Features (27)
 **Lease & Age:**
 - `lease_remaining_years` — Years on 99-year HDB lease at transaction
 - `flat_age_at_transaction` — Years since lease commencement
@@ -54,7 +54,16 @@
 - `school_count_1km` — Total count of all school types within 1 km
 - `school_cluster` — Derived school clustering rank
 
+**Recency Interaction Features (5) — added 2026-04-15:**
+- `years_since_transaction` — Years elapsed from transaction month to reference date (2026-04)
+- `years_since_transaction_sq` — Squared recency (captures non-linear depreciation)
+- `recency_normalized` — `years_since_transaction` scaled to [0, 1] by dividing by max
+- `recency_x_mall_access` — `years_since_transaction × mall_count_3km` (interaction)
+- `recency_x_school_quality` — `years_since_transaction × primary_school_quality_1km_weighted` (interaction)
+
 > **Note on removed features (2026-04-12):** `primary_school_top_quality_1km` was removed — only 3 unique values (97.1% same). Root cause: `sgschooling_2015plus_20260316.csv` has 98% null `competition_ratio_extracted`. Do NOT re-add without fixing the data source.
+>
+> **Note on school quality fix (2026-04-15):** `primary_school_quality_1km_weighted` now correctly reflects Phase 2B/2C competition ratios from sgschooling data (range 1.85–100.0, std=13.09, 8,438 unique values). Previously was near-constant ~14.134 due to ROOT path pointing to stale iCloud data.
 
 ### One-Hot Encoded Categorical (51)
 - **Town (26):** ANG_MO_KIO, BEDOK, BISHAN, ... (all HDB towns)

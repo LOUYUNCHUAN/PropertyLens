@@ -30,7 +30,7 @@ PropertyLens is a **layered, notebook-driven pipeline** that transforms public H
                          ↑
 ┌─────────────────────────────────────────────────────┐
 │ 02_feature_layer/                                   │
-│ Feature Engineering (73 total, 22 core + 51 OHE)   │
+│ Feature Engineering (86 total, 27 core + 51 OHE + 8 other) │
 └─────────────────────────────────────────────────────┘
                          ↑
 ┌─────────────────────────────────────────────────────┐
@@ -100,7 +100,7 @@ PropertyLens is a **layered, notebook-driven pipeline** that transforms public H
 
 ### Feature Data Contract
 Downstream code expects **`hf_data/02_feature_layer/training/outputs/`** with:
-- `hdb_feature_table_*.csv` — Full deduplicated dataset (263,004 rows × 77 columns as of 2026-04-12)
+- `hdb_feature_table_*.csv` — Full deduplicated dataset (263,004 rows × 86 columns as of 2026-04-15)
 - `hdb_feature_train_*.csv` — Training split, year < 2023 (180,195 rows)
 - `hdb_feature_test_*.csv` — Test split, year ≥ 2023 (82,809 rows)
 - `feature_metadata_*.json` — Metadata export (includes `dropped_features` key)

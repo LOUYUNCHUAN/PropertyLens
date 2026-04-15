@@ -1,17 +1,18 @@
 {
-  "version": "20260414",
-  "timestamp": "2026-04-14T02:27:00.000000+00:00",
+  "version": "20260415",
+  "timestamp": "2026-04-15T07:35:38.270531+00:00",
   "files": [
     "VERSION_MANIFEST.json",
-    "feature_metadata_20260414.json",
-    "hdb_feature_table_20260414.csv",
-    "hdb_feature_test_20260414.csv",
-    "hdb_feature_train_20260414.csv"
+    "feature_metadata_20260415.json",
+    "hdb_feature_table_20260415.csv",
+    "hdb_feature_test_20260415.csv",
+    "hdb_feature_train_20260415.csv"
   ],
-  "duplicates_removed": 2305,
-  "total_rows": 260699,
-  "train_rows": 178589,
-  "test_rows": 82110,
+  "duplicates_removed": 0,
+  "total_rows": 263004,
+  "train_rows": 180195,
+  "test_rows": 82809,
   "split_year": 2023,
+  "school_quality_fix": "20260415 - recomputed from Phase 2B/2C competition ratios",
   "old_versions_removed": 0
 }

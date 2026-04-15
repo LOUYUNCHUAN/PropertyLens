@@ -1,0 +1,74 @@
+{
+  "score_mrt": {
+    "source": "dist_to_mrt_m",
+    "direction": "inverse",
+    "p5": 174.21548242718885,
+    "p95": 6480.812576545713
+  },
+  "score_food": {
+    "source": "dist_to_foodcourt_m",
+    "direction": "inverse",
+    "p5": 215.20625291963415,
+    "p95": 2122.2427862716577
+  },
+  "score_shopping": {
+    "source": "dist_to_nearest_mall_m",
+    "direction": "inverse",
+    "p5": 184.01606832424517,
+    "p95": 1588.486960627241
+  },
+  "score_school_proximity": {
+    "source": "dist_to_nearest_school_m",
+    "direction": "inverse",
+    "p5": 116.27231290866143,
+    "p95": 690.2608144796347
+  },
+  "score_school_quality": {
+    "source": "primary_school_quality_1km_weighted",
+    "direction": "direct",
+    "p5": 7.343164320292811,
+    "p95": 51.98134536645034
+  },
+  "score_famous_school": {
+    "source": "dist_to_nearest_famous_school_km",
+    "direction": "inverse",
+    "p5": 0.4064,
+    "p95": 9.889394999999999
+  },
+  "score_size": {
+    "source": "floor_area_sqm",
+    "direction": "direct",
+    "p5": 64.0,
+    "p95": 146.0
+  },
+  "score_floor": {
+    "source": "level_mid",
+    "direction": "direct",
+    "p5": 2.0,
+    "p95": 17.0
+  },
+  "score_lease": {
+    "source": "lease_remaining_years",
+    "direction": "direct",
+    "p5": 49.0,
+    "p95": 91.0
+  },
+  "score_quietness": {
+    "source": "dist_to_highway_m",
+    "direction": "direct",
+    "p5": 684.968355108153,
+    "p95": 8747.776479461329
+  },
+  "score_value": {
+    "source": "resale_price",
+    "direction": "inverse",
+    "p5": 375000.0,
+    "p95": 1000000.0
+  },
+  "score_orientation": {
+    "source": "orientation_score",
+    "direction": "direct",
+    "p5": -1.0,
+    "p95": 1.0
+  }
+}

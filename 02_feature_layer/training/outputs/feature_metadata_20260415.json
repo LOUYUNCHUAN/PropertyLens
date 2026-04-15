@@ -1,0 +1,9 @@
+{
+  "export_date": "20260415",
+  "total_rows": 263004,
+  "train_rows": 180195,
+  "test_rows": 82809,
+  "columns": 86,
+  "split_year": 2023,
+  "duplicates_removed": 0
+}
