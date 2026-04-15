@@ -42,15 +42,8 @@ import {
 
 const MATURE_ESTATES = MATURE_ESTATES_LIST
 
-const FLAT_TYPES = [
-  '1 ROOM',
-  '2 ROOM',
-  '3 ROOM',
-  '4 ROOM',
-  '5 ROOM',
-  'EXECUTIVE',
-  'MULTI-GENERATION'
-]
+import { FLAT_TYPES } from '@/constants/flatTypes.js'
+import { STOREY_PRESETS } from '@/constants/storeyPresets.js'
 
 function normalizeStoreyRange(s) {
   return String(s || '')
@@ -104,17 +97,6 @@ function buildInitialForm() {
 
   return fromParams
 }
-
-const STOREY_PRESETS = [
-  { label: '01–03', value: '01 TO 03' },
-  { label: '04–06', value: '04 TO 06' },
-  { label: '07–09', value: '07 TO 09' },
-  { label: '10–12', value: '10 TO 12' },
-  { label: '13–15', value: '13 TO 15' },
-  { label: '16–18', value: '16 TO 18' },
-  { label: '19–21', value: '19 TO 21' },
-  { label: '22–25', value: '22 TO 25' }
-]
 
 export default function BuyerView() {
   const { username } = useAuth()
@@ -187,7 +169,6 @@ export default function BuyerView() {
 
   const runEstimate = async (flatPayload) => {
     setLoading(true)
-    setShowResults(true)
     setError(null)
     setPrediction(null)
     setShap(null)
@@ -212,6 +193,7 @@ export default function BuyerView() {
       setShap(shapRes)
       setCbr(cbrRes)
       setGlobalShapImportance(globalRes?.shap_importance ?? {})
+      setShowResults(true)
 
       const block = String(flatPayload.block || '').trim()
       let street = String(flatPayload.street_name || '').trim()
@@ -377,9 +359,11 @@ export default function BuyerView() {
               We predict fair resale value using eight key inputs: address (block and street),
               town, flat type, floor area, storey range, lease start year, and the month you
               are pricing for. Location and amenity distances are filled from our data when
-              the address matches. Defaults mirror a sample listing (Blk 1 Lorong Lew Lian,
-              Serangoon).
+              the address matches.
             </CardDescription>
+            <div className="mt-2 inline-flex w-fit items-center gap-2 rounded-md border border-dashed border-border bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
+              Example flat pre-filled (Blk 1 Lorong Lew Lian, Serangoon) — edit any field to your own.
+            </div>
           </CardHeader>
         )}
         <CardContent
@@ -402,8 +386,13 @@ export default function BuyerView() {
                 </span>
                 <span className="text-muted-foreground">
                   {' '}
-                  · {form.town} · {form.flat_type} · {form.floor_area_sqm} sqm · Lease start{' '}
-                  {form.lease_commence_date} · Sale month {form.sale_month}
+                  · {form.town} · {form.flat_type} · {form.floor_area_sqm} sqm · Storey{' '}
+                  {form.storey_range} · Lease start {form.lease_commence_date} (~
+                  {remainingLeaseApprox(
+                    Number(form.lease_commence_date),
+                    form.sale_month || defaultSaleMonth()
+                  )}{' '}
+                  yrs left) · Sale month {form.sale_month}
                   {listingAsNumber != null && (
                     <>
                       {' '}
@@ -599,7 +588,7 @@ export default function BuyerView() {
                 </Button>
                 <Button
                   type="button"
-                  variant={shortlistDisabled ? 'ghost' : 'outline'}
+                  variant="outline"
                   className="w-full sm:flex-1"
                   disabled={shortlistDisabled}
                   title={
@@ -612,22 +601,27 @@ export default function BuyerView() {
                   {shortlistLoading ? 'Saving…' : 'Add to shortlist'}
                 </Button>
               </div>
+              {shortlistDisabled && !shortlistLoading && !loading && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Run an estimate first to save this flat to your shortlist.
+                </p>
+              )}
             </FieldGroup>
           </form>
           )}
         </CardContent>
       </Card>
 
+      {loading && !prediction && (
+        <Card className="border-border/60 shadow-sm">
+          <CardContent className="pt-6">
+            <LoadingSpinner label="Fetching estimate, explanations, and comparables…" />
+          </CardContent>
+        </Card>
+      )}
+
       {showResults && (
         <>
-          {loading && !prediction && (
-            <Card className="border-border/60 shadow-sm">
-              <CardContent className="pt-6">
-                <LoadingSpinner label="Fetching estimate, explanations, and comparables…" />
-              </CardContent>
-            </Card>
-          )}
-
           {prediction && (
             <>
               <BuyerEstimateInsights

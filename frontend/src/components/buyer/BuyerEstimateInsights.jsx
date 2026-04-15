@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { getModelMeta } from '@/api/client.js'
 import LocationMap from '@/components/LocationMap.jsx'
 import BuyerStepCard from '@/components/buyer/BuyerStepCard.jsx'
 import BuyerStepProgressBar from '@/components/buyer/BuyerStepProgressBar.jsx'
 import ShapComparisonCard from '@/components/buyer/ShapComparisonCard.jsx'
+import { PriceRangeCard } from '@/components/price-range-card.jsx'
 import { WhatIfSlider } from '@/components/whatif/WhatIfSlider.jsx'
 import {
   defaultSaleMonth,
@@ -30,14 +32,15 @@ import {
 const fmt = (n) => `$${Math.round(n).toLocaleString()}`
 
 function getBaselineLabel(baseValue) {
-  return 'Model baseline'
+  const v = Number(baseValue) || 0
+  return v > 480000 ? 'Higher-value flat baseline' : 'National HDB baseline'
 }
 
 function getBaselineSubLabel(baseValue) {
   const v = Number(baseValue) || 0
   return v > 480000
-    ? 'avg for higher-value flat profiles'
-    : 'national average across all HDB flats'
+    ? 'avg for similar higher-value HDB profiles'
+    : 'avg across all HDB resale flats'
 }
 
 function getFooterText(baseValue, isAbove) {
@@ -605,6 +608,18 @@ export default function BuyerEstimateInsights({
   )
 
   const [activeStep, setActiveStep] = useState(0)
+  const [totalTransactions, setTotalTransactions] = useState(null)
+  useEffect(() => {
+    let alive = true
+    getModelMeta()
+      .then((m) => {
+        if (alive && m?.total_transactions) setTotalTransactions(m.total_transactions)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
   const [viewedSteps, setViewedSteps] = useState([
     false,
     false,
@@ -808,14 +823,32 @@ export default function BuyerEstimateInsights({
                   )}
                 </p>
               </div>
-              <div>
+              <div className="group relative">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   Verdict
+                  <span
+                    tabIndex={0}
+                    className="ml-1 inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border text-[9px] text-muted-foreground"
+                    aria-label="How verdict is calculated"
+                  >
+                    ?
+                  </span>
                 </p>
                 <p className="mt-1 text-lg font-bold leading-snug">
                   <span className="mr-1">{verdict.emoji}</span>
                   {verdict.label}
                 </p>
+                <div className="pointer-events-none absolute right-0 top-full z-30 mt-2 hidden w-64 rounded-md border border-border bg-popover p-3 text-[11px] leading-relaxed text-popover-foreground shadow-lg group-hover:block group-focus-within:block">
+                  <p className="mb-1 font-semibold">Verdict thresholds (gap vs estimate)</p>
+                  <ul className="space-y-0.5">
+                    <li>&lt; -10%: Good deal — below market</li>
+                    <li>-10% to -3%: Slightly below estimate</li>
+                    <li>-3% to +5%: Close to market value</li>
+                    <li>+5% to +15%: Slightly above market</li>
+                    <li>+15% to +30%: Significantly overpriced</li>
+                    <li>&gt; +30%: Far above market</li>
+                  </ul>
+                </div>
               </div>
             </div>
 
@@ -863,6 +896,25 @@ export default function BuyerEstimateInsights({
         )}
       </div>
 
+      {predictedPrice != null && listingAmount == null && (
+        <PriceRangeCard
+          aiEstimate={predictedPrice}
+          cbrMedian={cbrMedian ?? predictedPrice}
+          listingPrice={listingAmount ?? predictedPrice}
+          confidenceLow={confidenceLow ?? predictedPrice * 0.92}
+          confidenceHigh={confidenceHigh ?? predictedPrice * 1.08}
+          cbrSampleSize={comparables?.length ?? 5}
+          onEditListing={
+            listingAmount != null
+              ? () => {
+                  setListingAmount(null)
+                  setListingInput('')
+                }
+              : undefined
+          }
+        />
+      )}
+
       <div className="relative mt-4 space-y-0">
         <BuyerStepProgressBar viewedSteps={viewedSteps} activeStep={activeStep} />
 
@@ -901,7 +953,9 @@ export default function BuyerEstimateInsights({
                 <p className="mb-3 text-xs text-muted-foreground">
                   Each card compares this flat&apos;s contribution to the average across{' '}
                   <span className="font-medium text-foreground">
-                    260,699 Singapore resale transactions
+                    {totalTransactions
+                      ? `${totalTransactions.toLocaleString()} Singapore resale transactions`
+                      : 'all Singapore resale transactions in our dataset'}
                   </span>
                   . Above average = this flat benefits more from that factor than a typical HDB flat.
                 </p>
@@ -1175,7 +1229,12 @@ export default function BuyerEstimateInsights({
             loading={false}
           >
             <p className="text-xs text-muted-foreground">{nearbyAmenitySummary(nearbyResult)}</p>
-            {geocodeResult ? (
+            {geocodeResult && geocodeResult.found === false && (
+              <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                ⚠️ Address not found — showing town centroid. Distance-based features may be approximate.
+              </div>
+            )}
+            {geocodeResult && geocodeResult.found !== false ? (
               <div className="mt-4">
                 <LocationMap
                   geocode={geocodeResult}
