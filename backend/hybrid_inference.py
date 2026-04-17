@@ -20,7 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 
-from models import PredictRequest
+from backend.models import PredictRequest
 
 import joblib
 import numpy as np

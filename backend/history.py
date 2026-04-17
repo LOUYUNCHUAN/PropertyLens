@@ -17,9 +17,9 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from auth_deps import resolve_effective_username
-from db import get_db
-from sql_models import PredictionHistory
+from backend.auth_deps import resolve_effective_username
+from backend.db import get_db
+from backend.sql_models import PredictionHistory
 
 router = APIRouter(prefix="/history", tags=["history"])
 

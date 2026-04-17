@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from models import PredictRequest
+from backend.models import PredictRequest
 
 logger = logging.getLogger(__name__)
 
@@ -464,7 +464,7 @@ def validate_listing(req: ValidateRequest) -> ValidateResponse:
     surrogate_res: Optional[CspSubsystemResult] = None
     if req.flat is not None:
         try:
-            from hybrid_inference import features_dict_for_surrogate_rules
+            from backend.hybrid_inference import features_dict_for_surrogate_rules
 
             features_dict = features_dict_for_surrogate_rules(req.flat)
             surrogate_res = _run_surrogate(li["asking_price"], features_dict)

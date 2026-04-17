@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from sql_models import Base
+from backend.sql_models import Base
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_DB_PATH = REPO_ROOT / "data" / "propertylens.db"

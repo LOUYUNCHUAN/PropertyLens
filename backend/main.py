@@ -64,7 +64,7 @@ state = AppState()
 # ── Lifespan: load artefacts once at startup ──────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from hybrid_inference import HybridPredictWrapper, configure, load_bundle
+    from backend.hybrid_inference import HybridPredictWrapper, configure, load_bundle
 
     print("Loading artefacts...")
     print(f"   Artefacts: {ARTIFACTS_ROOT}")
@@ -127,8 +127,8 @@ async def lifespan(app: FastAPI):
     print(f"   Features: {len(state.feature_cols)}")
     print(f"   CBR cases: {len(state.cbr_df):,}")
     try:
-        from db import SessionLocal, init_db
-        from auth_routes import ensure_demo_user
+        from backend.db import SessionLocal, init_db
+        from backend.auth_routes import ensure_demo_user
 
         init_db()
         _sess = SessionLocal()
@@ -178,16 +178,16 @@ app.add_middleware(CacheControlMiddleware)
 
 
 # ── Import and register routers ───────────────────────────────────
-from predict import router as predict_router  # noqa: E402
-from cbr import router as cbr_router  # noqa: E402
-from analytics import router as analytics_router  # noqa: E402
-from counterfactual import router as cf_router  # noqa: E402
-from chat import router as chat_router  # noqa: E402
-from location import router as location_router  # noqa: E402
-from history import router as history_router  # noqa: E402
-from wishlist import router as wishlist_router  # noqa: E402
-from auth_routes import router as auth_router  # noqa: E402
-from constraints import validate_listing, ValidateRequest  # noqa: E402
+from backend.predict import router as predict_router  # noqa: E402
+from backend.cbr import router as cbr_router  # noqa: E402
+from backend.analytics import router as analytics_router  # noqa: E402
+from backend.counterfactual import router as cf_router  # noqa: E402
+from backend.chat import router as chat_router  # noqa: E402
+from backend.location import router as location_router  # noqa: E402
+from backend.history import router as history_router  # noqa: E402
+from backend.wishlist import router as wishlist_router  # noqa: E402
+from backend.auth_routes import router as auth_router  # noqa: E402
+from backend.constraints import validate_listing, ValidateRequest  # noqa: E402
 
 app.include_router(predict_router, prefix="/api")
 app.include_router(cbr_router, prefix="/api")

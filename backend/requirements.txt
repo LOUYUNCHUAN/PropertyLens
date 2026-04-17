@@ -2,7 +2,9 @@ fastapi==0.111.0
 uvicorn[standard]==0.29.0
 pydantic==2.7.1
 pandas==2.2.2
-numpy==1.26.4
+# numpy==1.26.4 has been observed to segfault on this Mac setup when importing joblib/numpy
+# during uvicorn startup. Keep numpy <2.3 for scipy==1.13.0 compatibility.
+numpy==2.2.6
 # 1.8.x matches hybrid_cluster_bundle pickles (KMeans / scalers); requires Python >=3.11 on PyPI.
 scikit-learn==1.8.0; python_version >= "3.11"
 scikit-learn==1.7.2; python_version < "3.11"

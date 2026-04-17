@@ -10,11 +10,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from auth_deps import resolve_effective_username
-from db import get_db
-from location import compute_nearby, geocode
-from models import CBRRequest, PredictRequest, SHAPRequest
-from sql_models import WishlistListing
+from backend.auth_deps import resolve_effective_username
+from backend.db import get_db
+from backend.location import compute_nearby, geocode
+from backend.models import CBRRequest, PredictRequest, SHAPRequest
+from backend.sql_models import WishlistListing
 
 router = APIRouter(prefix="/wishlist", tags=["wishlist"])
 
@@ -91,8 +91,8 @@ def create_wishlist_item(
     db: Session = Depends(get_db),
     authorization: Annotated[Optional[str], Header()] = None,
 ):
-    from cbr import cbr_similar
-    from predict import explain_shap, predict
+    from backend.cbr import cbr_similar
+    from backend.predict import explain_shap, predict
 
     try:
         flat = PredictRequest.model_validate(req.payload)

@@ -8,9 +8,9 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import JSONResponse
 import pandas as pd
 
-from models import TrendsResponse, TrendPoint, RulesResponse
-from main import state, ARTIFACTS_ROOT, FEATURE_LAYER_OUTPUTS, REPO_ROOT
-from constraints import CONDITION_LABELS
+from backend.models import TrendsResponse, TrendPoint, RulesResponse
+from backend.main import state, ARTIFACTS_ROOT, FEATURE_LAYER_OUTPUTS, REPO_ROOT
+from backend.constraints import CONDITION_LABELS
 
 router = APIRouter()
 

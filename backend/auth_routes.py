@@ -11,9 +11,9 @@ from jose import jwt
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from auth_deps import JWT_ALGORITHM, JWT_EXPIRE_MINUTES, JWT_SECRET, get_current_user
-from db import get_db
-from sql_models import AppUser, PredictionHistory, WishlistListing
+from backend.auth_deps import JWT_ALGORITHM, JWT_EXPIRE_MINUTES, JWT_SECRET, get_current_user
+from backend.db import get_db
+from backend.sql_models import AppUser, PredictionHistory, WishlistListing
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

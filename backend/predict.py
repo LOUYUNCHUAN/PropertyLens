@@ -6,7 +6,7 @@ Uses PropertyLens hybrid cluster bundle under data/artifacts/.
 from fastapi import APIRouter
 import numpy as np
 
-from models import (
+from backend.models import (
     PredictRequest,
     PredictResponse,
     LocationContext,
@@ -19,10 +19,9 @@ from models import (
     LIMEResponse,
     LIMEFeature,
 )
-from main import state
+from backend.main import state
 
 router = APIRouter()
-
 
 def _public_price(raw: float) -> float:
     """Same rounding as POST /api/predict — nearest S$100."""
@@ -97,15 +96,16 @@ def _legacy_ir_to_hybrid_vector(req: PredictRequest) -> np.ndarray:
 
 def flat_to_feature_vector_with_debug(req: PredictRequest) -> tuple[np.ndarray, HybridPredictionDebug, dict]:
     """Returns (feature_vector, debug_info, features_dict)."""
-    from hybrid_inference import (
+    from backend.hybrid_inference import (
         build_yc_hybrid_vector,
         cluster_label_for_X,
         default_feature_table_csv,
     )
 
     ft_path = str(default_feature_table_csv())
+    use_addr = _use_address_feature_builder(req)
 
-    if _use_address_feature_builder(req):
+    if use_addr:
         storey_range = (req.storey_range or "").strip()
         if not storey_range:
             sm = int(req.storey_mid)
@@ -188,7 +188,7 @@ def _build_location_context(feat: dict, req: PredictRequest) -> LocationContext:
 
 @router.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest):
-    from cbr import compute_cbr_median
+    from backend.cbr import compute_cbr_median
 
     X_flat, pred_debug, feat_dict = flat_to_feature_vector_with_debug(req)
     X = X_flat.reshape(1, -1)
@@ -201,8 +201,8 @@ def predict(req: PredictRequest):
 
     cbr_check = None
     try:
-        from cbr import cbr_similar
-        from models import CBRRequest
+        from backend.cbr import cbr_similar
+        from backend.models import CBRRequest
 
         cbr_req = CBRRequest(flat=req, k=5)
         cbr_resp = cbr_similar(cbr_req)
@@ -266,7 +266,7 @@ def predict(req: PredictRequest):
 def explain_shap(req: SHAPRequest):
     from fastapi import HTTPException
 
-    from shap_local import compute_cluster_xgb_shap
+    from backend.shap_local import compute_cluster_xgb_shap
 
     X = flat_to_feature_vector(req.flat).reshape(1, -1)
     predicted = predict_hybrid(X)

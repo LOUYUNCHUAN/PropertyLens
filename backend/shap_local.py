@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from hybrid_inference import cluster_label_for_X
+from backend.hybrid_inference import cluster_label_for_X
 
 
 def _cluster_bundle(bundle: dict[str, Any], cluster_id: int) -> dict[str, Any]:

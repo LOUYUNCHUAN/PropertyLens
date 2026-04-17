@@ -7,8 +7,8 @@ Returns fair value gap + negotiation range + top SHAP factors.
 from fastapi import APIRouter
 import numpy as np
 
-from models import CounterfactualRequest, CounterfactualResponse, SHAPFeature
-from main import state
+from backend.models import CounterfactualRequest, CounterfactualResponse, SHAPFeature
+from backend.main import state
 
 router = APIRouter()
 
@@ -35,8 +35,8 @@ def _top3_shap_from_global(X: np.ndarray) -> list[SHAPFeature]:
 
 @router.post("/counterfactual", response_model=CounterfactualResponse)
 def counterfactual(req: CounterfactualRequest):
-    from predict import flat_to_feature_vector, predict_hybrid
-    from shap_local import compute_cluster_xgb_shap
+    from backend.predict import flat_to_feature_vector, predict_hybrid
+    from backend.shap_local import compute_cluster_xgb_shap
 
     X = flat_to_feature_vector(req.flat).reshape(1, -1)
     raw = predict_hybrid(X)

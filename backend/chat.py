@@ -17,8 +17,8 @@ from fastapi.responses import StreamingResponse
 import google.generativeai as genai
 from neo4j import GraphDatabase
 
-from models import ChatRequest
-from main import state
+from backend.models import ChatRequest
+from backend.main import state
 
 router = APIRouter()
 
