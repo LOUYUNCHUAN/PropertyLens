@@ -30,7 +30,6 @@ export default function DiscoverView() {
       remaining_lease_years: 75,
       lease_commence_date: 1995,
       dist_nearest_mrt_km: Number(prefs.max_mrt_km),
-      dist_to_cbd_km: 10,
       is_mature_estate: Number(prefs.mature),
       top_school_within_1km: Number(prefs.top_school),
       year: new Date().getFullYear(),

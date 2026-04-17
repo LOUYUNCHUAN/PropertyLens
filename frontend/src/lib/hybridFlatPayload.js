@@ -78,7 +78,6 @@ export function buildHybridFlatPayload(f) {
     year: yr,
     month_num: mo,
     dist_nearest_mrt_km: 0.5,
-    dist_to_cbd_km: 10,
     is_mature_estate: MATURE_ESTATES_LIST.includes(town) ? 1 : 0,
     dist_nearest_primary_school_km: 0.5,
     dist_nearest_top_school_km: 1.5,
@@ -112,7 +111,11 @@ export function applyNearbyToFlatPayload(flat, nearby) {
   }
   const schools = Array.isArray(nearby.school) ? nearby.school : []
   if (schools.length) {
-    const sorted = [...schools].sort((a, b) => a.dist_m - b.dist_m)
+    const primary = schools.filter(
+      (s) => String(s.type || '').toUpperCase() === 'PRIMARY'
+    )
+    const base = primary.length ? primary : schools
+    const sorted = [...base].sort((a, b) => a.dist_m - b.dist_m)
     next.dist_nearest_primary_school_km =
       Math.round((sorted[0].dist_m / 1000) * 100) / 100
     next.primary_schools_within_1km = Math.max(
@@ -123,10 +126,10 @@ export function applyNearbyToFlatPayload(flat, nearby) {
       next.primary_schools_within_2km,
       sorted.filter((s) => s.dist_m <= 2000).length
     )
-    next.dist_nearest_top_school_km =
-      Math.round((sorted[0].dist_m / 1000) * 100) / 100
-    next.top_school_within_1km = sorted.some((s) => s.dist_m <= 1000) ? 1 : 0
-    next.top_school_within_2km = sorted.some((s) => s.dist_m <= 2000) ? 1 : 0
+    // NOTE: /api/nearby has no "top school" flag (MOE autonomous/gifted/SAP).
+    // Do NOT infer top_school_* from proximity to any school — that inflates
+    // predictions. The backend feature-table lookup supplies these for matched
+    // addresses; unmatched addresses fall back to defaults (0).
   }
   const hawkers = Array.isArray(nearby.hawker) ? nearby.hawker : []
   if (hawkers.length) {

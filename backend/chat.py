@@ -369,16 +369,22 @@ def get_shap_context() -> str:
     f'  {i + 1}. {feat}: avg impact ${val:,.0f}'
     for i, (feat, val) in enumerate(top10)
   ]
-  return 'Top price drivers (SHAP, Hybrid Cluster Ensemble R²=0.9658):\n' + '\n'.join(lines)
+  r2 = state.model_meta['test_metrics']['r2']
+  return f'Top price drivers (SHAP, Hybrid Cluster Ensemble R²={r2:.4f}):\n' + '\n'.join(lines)
 
 
 # ── System prompt ─────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are PropertyLens Assistant — an expert on Singapore HDB resale flat prices.
+def _system_prompt() -> str:
+  meta = state.model_meta
+  test = meta['test_metrics']
+  total_tx = meta['train_size'] + meta.get('val_size', 0) + meta['test_size']
+  base_models = ', '.join(meta.get('base_models', [])) or 'ensemble bases'
+  return f"""You are PropertyLens Assistant — an expert on Singapore HDB resale flat prices.
 You help buyers, sellers, and analysts understand HDB resale prices using explainable AI.
 
 Your knowledge comes from:
-- 260,000+ HDB resale transactions (1990–2026)
-- Hybrid Cluster Ensemble model (Ridge, XGBoost, LightGBM, RandomForest) with RMSE $37,791, R² 0.9658, MAPE 4.01%
+- {total_tx:,}+ HDB resale transactions
+- {meta['model_name']} ({base_models}) with RMSE ${test['rmse']:,.0f}, R² {test['r2']:.4f}, MAPE {test['mape_pct']:.2f}%
 - SHAP feature importance analysis
 - Apriori association rules
 - Neo4j knowledge graph of Singapore towns, MRTs, schools, and policies
@@ -394,7 +400,7 @@ Guidelines:
 
 
 def _build_ollama_messages(req_history: list, user_prompt: str) -> list[dict]:
-  messages: list[dict] = [{'role': 'system', 'content': SYSTEM_PROMPT}]
+  messages: list[dict] = [{'role': 'system', 'content': _system_prompt()}]
   for msg in req_history[-6:]:
     role = 'user' if msg.get('role') == 'user' else 'assistant'
     content = (msg.get('content') or '').strip()
@@ -494,7 +500,7 @@ Answer based on the context above. Be specific about Singapore HDB market."""
         history = _build_gemini_history(req.history)
         chat_session = gemini.start_chat(history=history)
         response = chat_session.send_message(
-          f'{SYSTEM_PROMPT}\n\n{user_prompt}', stream=True
+          f'{_system_prompt()}\n\n{user_prompt}', stream=True
         )
         for chunk in response:
           text = getattr(chunk, 'text', '') or ''

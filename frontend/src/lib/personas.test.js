@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import {
-  INVESTOR_STABLE_FEATURES,
-  investorFundamentalsSignal,
   investorScore,
   investorTag,
   familyScore,
@@ -9,169 +7,95 @@ import {
   commuterTag
 } from './personas.js'
 
-const baseInvestorSnap = {
-  listing_price: 400_000,
-  model_estimate: 400_000,
-  cbr_matches: [{ match_score: 50 }],
-  shap_values: {}
-}
-
-describe('INV-1 stableFeatures mall key', () => {
-  it('does not use invalid dist_to_nearest_mall_m in stable list', () => {
-    expect(INVESTOR_STABLE_FEATURES).not.toContain('dist_to_nearest_mall_m')
-    expect(INVESTOR_STABLE_FEATURES).toContain('mall_weighted_access_3km')
+describe('FAM-1 family ranks by real nearby schools', () => {
+  it('closer nearest school beats farther nearest school', () => {
+    const close = { nearby: { school: [{ name: 'A', dist_m: 200 }] } }
+    const far = { nearby: { school: [{ name: 'B', dist_m: 1200 }] } }
+    expect(familyScore(close)).toBeGreaterThan(familyScore(far))
   })
 
-  it('investorScore increases when mall_weighted_access_3km is the only extra stable SHAP', () => {
-    const withoutMall = {
-      ...baseInvestorSnap,
-      shap_values: {
-        transaction_year: 50_000,
-        primary_school_quality_1km_weighted: 400
+  it('more schools within 1km beats fewer when nearest is the same', () => {
+    const few = {
+      nearby: { school: [{ name: 'A', dist_m: 400 }] }
+    }
+    const many = {
+      nearby: {
+        school: [
+          { name: 'A', dist_m: 400 },
+          { name: 'B', dist_m: 600 },
+          { name: 'C', dist_m: 800 },
+          { name: 'D', dist_m: 950 }
+        ]
       }
     }
-    const withMall = {
-      ...baseInvestorSnap,
-      shap_values: {
-        ...withoutMall.shap_values,
-        mall_weighted_access_3km: 10_102
-      }
-    }
-    expect(investorScore(withMall)).toBeGreaterThan(investorScore(withoutMall))
+    expect(familyScore(many)).toBeGreaterThan(familyScore(few))
+  })
+
+  it('no schools nearby → 0', () => {
+    expect(familyScore({ nearby: { school: [] } })).toBe(0)
+    expect(familyScore({ nearby: null })).toBe(0)
+    expect(familyScore({})).toBe(0)
   })
 })
 
-describe('INV-2 normalized investor fundamentals', () => {
-  const richStableSnap = {
-    ...baseInvestorSnap,
-    shap_values: {
-      transaction_year: 114_626,
-      primary_school_quality_1km_weighted: 800,
-      dist_to_mrt_m: 6108,
-      floor_area_sqm: 60_854,
-      lease_remaining_years: 39_477,
-      mall_weighted_access_3km: 10_102
-    }
-  }
-
-  it('fundamentalsSignal not collapsed to ~0 when transaction_year is huge but stables are typical', () => {
-    const sig = investorFundamentalsSignal(richStableSnap)
-    expect(sig).toBeGreaterThan(0.05)
+describe('COM-1 commuter ranks by real nearby MRT/LRT', () => {
+  it('closer nearest MRT beats farther nearest MRT', () => {
+    const close = { nearby: { mrt: [{ name: 'A', dist_m: 200 }] } }
+    const far = { nearby: { mrt: [{ name: 'B', dist_m: 1000 }] } }
+    expect(commuterScore(close)).toBeGreaterThan(commuterScore(far))
   })
 
-  it('fundamentalsSignal changes modestly when only transaction_year raw magnitude changes', () => {
-    const a = investorFundamentalsSignal({
-      ...richStableSnap,
-      shap_values: { ...richStableSnap.shap_values, transaction_year: 80_000 }
-    })
-    const b = investorFundamentalsSignal({
-      ...richStableSnap,
-      shap_values: { ...richStableSnap.shap_values, transaction_year: 150_000 }
-    })
-    expect(Math.abs(a - b)).toBeLessThan(0.35)
-    expect(a).toBeGreaterThan(0.05)
-    expect(b).toBeGreaterThan(0.05)
-  })
-})
-
-describe('INV-3 investorTag by fundamentalsSignal', () => {
-  it('shows fundamentals-driven when signal high', () => {
-    const snap = {
-      ...baseInvestorSnap,
-      shap_values: {
-        primary_school_quality_1km_weighted: 2400,
-        dist_to_mrt_m: 18_000,
-        floor_area_sqm: 120_000,
-        lease_remaining_years: 80_000,
-        mall_weighted_access_3km: 20_000,
-        transaction_year: 30_000
+  it('more stations within 1km beats fewer when nearest is the same', () => {
+    const few = { nearby: { mrt: [{ name: 'A', dist_m: 400 }] } }
+    const many = {
+      nearby: {
+        mrt: [
+          { name: 'A', dist_m: 400 },
+          { name: 'B', dist_m: 700 }
+        ],
+        lrt: [{ name: 'L1', dist_m: 900 }]
       }
     }
-    expect(investorTag(snap)).toContain('✓ fundamentals-driven')
+    expect(commuterScore(many)).toBeGreaterThan(commuterScore(few))
   })
 
-  it('shows mixed drivers in middle band', () => {
-    const snap = {
-      ...baseInvestorSnap,
-      shap_values: {
-        primary_school_quality_1km_weighted: 400,
-        dist_to_mrt_m: 3054,
-        floor_area_sqm: 30_427,
-        lease_remaining_years: 19_738,
-        mall_weighted_access_3km: 5051,
-        transaction_year: 229_252
-      }
-    }
-    const sig = investorFundamentalsSignal(snap)
-    expect(sig).toBeGreaterThan(0.1)
-    expect(sig).toBeLessThanOrEqual(0.3)
-    expect(investorTag(snap)).toContain('~ mixed drivers')
+  it('no MRT/LRT nearby → 0', () => {
+    expect(commuterScore({ nearby: { mrt: [], lrt: [] } })).toBe(0)
+    expect(commuterScore({ nearby: null })).toBe(0)
+    expect(commuterScore({})).toBe(0)
   })
 
-  it('shows timing dominant when signal is low', () => {
-    const snap = {
-      ...baseInvestorSnap,
-      shap_values: {
-        transaction_year: 500_000,
-        primary_school_quality_1km_weighted: 50
-      }
-    }
-    expect(investorFundamentalsSignal(snap)).toBeLessThanOrEqual(0.1)
-    expect(investorTag(snap)).toContain('⚠️ Market timing dominant')
-    expect(investorTag(snap)).toContain('normalized')
-  })
-})
-
-describe('COM-1 commuter MRT sign', () => {
-  it('higher score when dist_to_mrt_m SHAP is positive vs negative (all else equal)', () => {
-    const positive = { shap_values: { dist_to_mrt_m: 3000 } }
-    const negative = { shap_values: { dist_to_mrt_m: -3000 } }
-    expect(commuterScore(positive)).toBeGreaterThan(commuterScore(negative))
-  })
-})
-
-describe('COM-2 commuter highway term removed', () => {
-  it('does not penalize commuter-friendly negative highway SHAP', () => {
-    const base = { shap_values: { dist_to_mrt_m: 1000 } }
-    const withHighwayNeg = {
-      shap_values: { dist_to_mrt_m: 1000, dist_to_highway_m: -5000 }
-    }
-    expect(commuterScore(base)).toBe(commuterScore(withHighwayNeg))
-  })
-
-  it('penalizes only positive highway SHAP (sign-correct)', () => {
-    const base = { shap_values: { dist_to_mrt_m: 1000 } }
-    const withHighwayPos = {
-      shap_values: { dist_to_mrt_m: 1000, dist_to_highway_m: 5000 }
-    }
-    expect(commuterScore(withHighwayPos)).toBeLessThan(commuterScore(base))
-  })
-
-  it('commuterTag still works', () => {
-    const snap = {
-      shap_values: { dist_to_mrt_m: 1 },
-      nearby: { mrt: [{ name: 'NS1', dist_m: 300 }] }
-    }
+  it('commuterTag uses nearest MRT from nearby', () => {
+    const snap = { nearby: { mrt: [{ name: 'NS1', dist_m: 300 }] } }
     expect(commuterTag(snap)).toMatch(/NS1/)
   })
 })
 
-describe('FAM-1 family sign handling', () => {
-  it('higher score when school quality SHAP is positive vs negative (all else equal)', () => {
-    const positive = {
-      shap_values: {
-        primary_school_quality_1km_weighted: 800,
-        school_count_1km: 0,
-        primary_school_count_1km: 0
-      }
-    }
-    const negative = {
-      shap_values: {
-        primary_school_quality_1km_weighted: -800,
-        school_count_1km: 0,
-        primary_school_count_1km: 0
-      }
-    }
-    expect(familyScore(positive)).toBeGreaterThan(familyScore(negative))
+describe('INV-1 investor uses Smart Score (deal quality)', () => {
+  const baseSnap = {
+    listing_price: 500_000,
+    model_estimate: 500_000,
+    cbr_matches: [
+      { resale_price: 500_000 },
+      { resale_price: 500_000 },
+      { resale_price: 500_000 }
+    ],
+    remaining_lease_years: 90,
+    shap_values: {}
+  }
+
+  it('a real bargain ranks higher than a fair-priced flat', () => {
+    const bargain = { ...baseSnap, listing_price: 460_000 }
+    expect(investorScore(bargain)).toBeGreaterThan(investorScore(baseSnap))
+  })
+
+  it('an overpriced flat ranks lower than a fair-priced flat', () => {
+    const overpriced = { ...baseSnap, listing_price: 575_000 }
+    expect(investorScore(overpriced)).toBeLessThan(investorScore(baseSnap))
+  })
+
+  it('investorTag shows price gap and comp position', () => {
+    const tag = investorTag({ ...baseSnap, listing_price: 460_000 })
+    expect(tag).toContain('below model')
   })
 })

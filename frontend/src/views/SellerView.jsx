@@ -7,6 +7,8 @@ import api, {
 } from '../api/client.js'
 import SellerResultsStepFlow from '@/components/seller/SellerResultsStepFlow.jsx'
 import { TOWNS } from '../constants/towns.js'
+import { FLAT_TYPES } from '@/constants/flatTypes.js'
+import { STOREY_PRESETS } from '@/constants/storeyPresets.js'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -16,6 +18,7 @@ import {
   CardTitle
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { FormField } from '@/components/ui/form-field'
 import {
   Select,
   SelectContent,
@@ -30,46 +33,6 @@ import {
   parseStoreyMid,
   remainingLeaseApprox
 } from '@/lib/hybridFlatPayload.js'
-
-const TOWN_CBD_DIST = {
-  TAMPINES: 14.2,
-  BEDOK: 11.5,
-  'JURONG WEST': 18.0,
-  'JURONG EAST': 15.5,
-  SENGKANG: 14.0,
-  PUNGGOL: 17.5,
-  WOODLANDS: 21.5,
-  YISHUN: 16.5,
-  HOUGANG: 11.5,
-  'ANG MO KIO': 9.0,
-  BISHAN: 8.0,
-  'TOA PAYOH': 5.5,
-  QUEENSTOWN: 3.5,
-  'BUKIT MERAH': 4.5,
-  CLEMENTI: 9.0,
-  GEYLANG: 4.5,
-  SERANGOON: 8.5,
-  'MARINE PARADE': 6.0,
-  'PASIR RIS': 18.0,
-  'KALLANG/WHAMPOA': 3.5,
-  'CENTRAL AREA': 1.5,
-  'BUKIT TIMAH': 9.5,
-  'CHOA CHU KANG': 20.0,
-  'BUKIT BATOK': 15.0,
-  'BUKIT PANJANG': 18.0,
-  SEMBAWANG: 23.0
-}
-
-const STOREY_PRESETS = [
-  { label: '01–03', value: '01 TO 03' },
-  { label: '04–06', value: '04 TO 06' },
-  { label: '07–09', value: '07 TO 09' },
-  { label: '10–12', value: '10 TO 12' },
-  { label: '13–15', value: '13 TO 15' },
-  { label: '16–18', value: '16 TO 18' },
-  { label: '19–21', value: '19 TO 21' },
-  { label: '22–25', value: '22 TO 25' }
-]
 
 function normalizeStoreyRange(s) {
   return String(s || '')
@@ -118,7 +81,6 @@ function buildSellerFlatPayload(form) {
     lease_commence_date: parseInt(form.leaseCommenceDate, 10),
     sale_month: form.sale_month || defaultSaleMonth()
   })
-  flat.dist_to_cbd_km = TOWN_CBD_DIST[form.town] || flat.dist_to_cbd_km
   if (form.useAdvancedPoi) {
     const dm = parseFloat(form.distMrt)
     const ds = parseFloat(form.distTopSchool)
@@ -140,21 +102,48 @@ function buildSellerFlatPayload(form) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function SellerView() {
-  const [form, setForm] = useState({
-    block: '201',
-    streetName: 'TAMPINES ST 21',
-    town: 'TAMPINES',
-    flatType: '4 ROOM',
-    floorArea: '92',
-    storey_range: '07 TO 09',
-    leaseCommenceDate: '1993',
-    sale_month: defaultSaleMonth(),
-    useAdvancedPoi: false,
-    distMrt: '0.4',
-    distTopSchool: '0.8',
-    hawkers500m: '2'
+const SELLER_DEFAULT_FORM = {
+  block: '201',
+  streetName: 'TAMPINES ST 21',
+  town: 'TAMPINES',
+  flatType: '4 ROOM',
+  floorArea: '92',
+  storey_range: '07 TO 09',
+  leaseCommenceDate: '1993',
+  sale_month: defaultSaleMonth(),
+  useAdvancedPoi: false,
+  distMrt: '0.4',
+  distTopSchool: '0.8',
+  hawkers500m: '2'
+}
+
+function buildInitialSellerForm() {
+  if (typeof window === 'undefined') return { ...SELLER_DEFAULT_FORM }
+  const params = new URLSearchParams(window.location.search)
+  if (!params.toString()) return { ...SELLER_DEFAULT_FORM }
+  const next = { ...SELLER_DEFAULT_FORM }
+  const paramMap = {
+    block: 'block',
+    street_name: 'streetName',
+    town: 'town',
+    flat_type: 'flatType',
+    floor_area_sqm: 'floorArea',
+    storey_range: 'storey_range',
+    lease_commence_date: 'leaseCommenceDate',
+    sale_month: 'sale_month'
+  }
+  Object.entries(paramMap).forEach(([urlKey, formKey]) => {
+    const v = params.get(urlKey)
+    if (v != null && v !== '') next[formKey] = String(v)
   })
+  return next
+}
+
+export default function SellerView() {
+  const [form, setForm] = useState(() => buildInitialSellerForm())
+  const [fromShortlist] = useState(
+    () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).toString().length > 0
+  )
 
   const [results, setResults] = useState(null)
   const [askingPrice, setAskingPrice] = useState(null)
@@ -269,8 +258,10 @@ export default function SellerView() {
         cf: cfFinal?.data || null,
         baseFlatPayload: flat
       })
-      const initialAsking = Math.round(predictedPrice * mult)
-      setAskingPrice(initialAsking)
+      // Anchor the asking-price input at the fair market estimate — not at the
+      // town-YoY-buffered figure. The multiplier is still surfaced as a quick pick
+      // so sellers can opt in with the rationale visible (BUG-013).
+      setAskingPrice(Math.round(predictedPrice))
       setCspResult(null)
       setFormCollapsed(true)
       setResultsKey((k) => k + 1)
@@ -376,10 +367,10 @@ export default function SellerView() {
 
   const leaseTone =
     remainingLease >= 60
-      ? { bg: 'bg-emerald-50', text: 'text-emerald-800' }
+      ? 'text-emerald-600 dark:text-emerald-400'
       : remainingLease >= 40
-        ? { bg: 'bg-amber-50', text: 'text-amber-900' }
-        : { bg: 'bg-red-50', text: 'text-red-900' }
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-red-600 dark:text-red-400'
 
   return (
     <div className="space-y-6">
@@ -389,6 +380,16 @@ export default function SellerView() {
           <CardDescription>
             Fair market value, asking price guidance, and what drives your valuation.
           </CardDescription>
+          {!fromShortlist && (
+            <div className="mt-2 inline-flex w-fit items-center gap-2 rounded-md border border-dashed border-border bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
+              Example flat pre-filled (Blk 201 Tampines St 21) — edit any field to your own.
+            </div>
+          )}
+          {fromShortlist && (
+            <div className="mt-2 inline-flex w-fit items-center gap-2 rounded-md border border-dashed border-primary/50 bg-primary/10 px-2 py-1 text-xs text-primary">
+              Loaded from your shortlist — analysing this saved flat.
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-5 border-t border-border/60 pt-5">
           {formCollapsed && results ? (
@@ -464,7 +465,7 @@ export default function SellerView() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {['2 ROOM', '3 ROOM', '4 ROOM', '5 ROOM', 'EXECUTIVE'].map((t) => (
+                      {FLAT_TYPES.map((t) => (
                         <SelectItem key={t} value={t}>
                           {t}
                         </SelectItem>
@@ -534,19 +535,21 @@ export default function SellerView() {
                   />
                 </FormField>
 
-                <FormField label="Remaining lease (from lease year + sale month)">
-                  <div className="space-y-1">
-                    <div
-                      className={`flex min-h-9 items-center rounded-md border border-input px-3 text-sm font-medium ${leaseTone.bg} ${leaseTone.text}`}
-                    >
-                      {remainingLease > 0 ? `${remainingLease} years` : '—'}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Calculated from lease start {form.leaseCommenceDate} and sale month{' '}
-                      {form.sale_month || defaultSaleMonth()}. Change those fields to adjust.
-                    </p>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Remaining lease
+                  </span>
+                  <div className="flex min-h-9 items-baseline gap-2">
+                    <span className={`text-2xl font-semibold tabular-nums ${leaseTone}`}>
+                      {remainingLease > 0 ? remainingLease : '—'}
+                    </span>
+                    <span className="text-sm text-muted-foreground">years remaining</span>
                   </div>
-                </FormField>
+                  <p className="text-xs text-muted-foreground">
+                    Auto-calculated from lease start {form.leaseCommenceDate} and sale month{' '}
+                    {form.sale_month || defaultSaleMonth()}.
+                  </p>
+                </div>
               </div>
 
               <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
@@ -559,7 +562,7 @@ export default function SellerView() {
                   <span className="text-muted-foreground">{advancedOpen ? '−' : '+'}</span>
                 </button>
                 {advancedOpen && (
-                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="mt-3 space-y-3">
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -568,41 +571,46 @@ export default function SellerView() {
                       />
                       Use manual values instead of map-based distances
                     </label>
-                    <FormField label="Nearest MRT (km)">
-                      <Input
-                        type="number"
-                        value={form.distMrt}
-                        step={0.1}
-                        onChange={(e) => handleFormChange('distMrt', e.target.value)}
-                        min={0}
-                        max={5}
-                        disabled={!form.useAdvancedPoi}
-                        className="h-9"
-                      />
-                    </FormField>
-                    <FormField label="Nearest top school (km)">
-                      <Input
-                        type="number"
-                        value={form.distTopSchool}
-                        step={0.1}
-                        onChange={(e) => handleFormChange('distTopSchool', e.target.value)}
-                        min={0}
-                        max={5}
-                        disabled={!form.useAdvancedPoi}
-                        className="h-9"
-                      />
-                    </FormField>
-                    <FormField label="Hawkers within 500m (count)">
-                      <Input
-                        type="number"
-                        value={form.hawkers500m}
-                        onChange={(e) => handleFormChange('hawkers500m', e.target.value)}
-                        min={0}
-                        max={20}
-                        disabled={!form.useAdvancedPoi}
-                        className="h-9"
-                      />
-                    </FormField>
+                    {form.useAdvancedPoi ? (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <FormField label="Nearest MRT (km)">
+                          <Input
+                            type="number"
+                            value={form.distMrt}
+                            step={0.1}
+                            onChange={(e) => handleFormChange('distMrt', e.target.value)}
+                            min={0}
+                            max={5}
+                            className="h-9"
+                          />
+                        </FormField>
+                        <FormField label="Nearest top school (km)">
+                          <Input
+                            type="number"
+                            value={form.distTopSchool}
+                            step={0.1}
+                            onChange={(e) => handleFormChange('distTopSchool', e.target.value)}
+                            min={0}
+                            max={5}
+                            className="h-9"
+                          />
+                        </FormField>
+                        <FormField label="Hawkers within 500m (count)">
+                          <Input
+                            type="number"
+                            value={form.hawkers500m}
+                            onChange={(e) => handleFormChange('hawkers500m', e.target.value)}
+                            min={0}
+                            max={20}
+                            className="h-9"
+                          />
+                        </FormField>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Distances are automatically computed from your address. Enable manual override to type them in.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -648,26 +656,5 @@ export default function SellerView() {
   )
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function FormField({ label, children }) {
-  return (
-    <div>
-      <label
-        style={{
-          display: 'block',
-          fontSize: '12px',
-          fontWeight: 500,
-          color: 'var(--text-secondary)',
-          marginBottom: '6px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px'
-        }}
-      >
-        {label}
-      </label>
-      {children}
-    </div>
-  )
-}
+// FormField now imported from '@/components/ui/form-field'
 

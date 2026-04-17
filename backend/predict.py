@@ -29,9 +29,10 @@ def _public_price(raw: float) -> float:
     return round(float(raw), -2)
 
 
-# Hybrid cluster ensemble test metrics (from 02_hybrid_ensemble.ipynb)
-HYBRID_RMSE = 37791.0
-HYBRID_R2 = 0.9658
+def _hybrid_test_metrics() -> tuple[float, float]:
+    """Pull live RMSE/R² from hybrid_cluster_meta.json (loaded at startup)."""
+    test = state.model_meta["test_metrics"]
+    return float(test["rmse"]), float(test["r2"])
 
 _FLAT_TO_ROOMS = {
     "1 ROOM": 1,
@@ -194,8 +195,9 @@ def predict(req: PredictRequest):
     raw = predict_hybrid(X)
     predicted_price = _public_price(raw)
 
-    confidence_low = max(0, predicted_price - 1.5 * HYBRID_RMSE)
-    confidence_high = predicted_price + 1.5 * HYBRID_RMSE
+    hybrid_rmse, hybrid_r2 = _hybrid_test_metrics()
+    confidence_low = max(0, predicted_price - 1.5 * hybrid_rmse)
+    confidence_high = predicted_price + 1.5 * hybrid_rmse
 
     cbr_check = None
     try:
@@ -250,8 +252,8 @@ def predict(req: PredictRequest):
         confidence_high=confidence_high,
         price_per_sqm=round(predicted_price / req.floor_area_sqm),
         model_used="hybrid_cluster",
-        rmse=HYBRID_RMSE,
-        r2=HYBRID_R2,
+        rmse=hybrid_rmse,
+        r2=hybrid_r2,
         calibration_applied=True,
         ensemble_detail=None,
         cbr_check=cbr_check,

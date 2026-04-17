@@ -184,7 +184,6 @@ export const SAMPLE_FLAT = {
   year: 2026,
   month_num: 4,
   dist_nearest_mrt_km: 0.5,
-  dist_to_cbd_km: 10,
   is_mature_estate: 0,
   dist_nearest_primary_school_km: 0.5,
   dist_nearest_top_school_km: 1.5,

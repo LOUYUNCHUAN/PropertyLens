@@ -68,18 +68,36 @@ def global_shap(cluster_id: Optional[int] = Query(default=None, ge=0)):
 
     # Overall (backwards compatible)
     if cluster_id is None:
+        by_cluster = (state.global_shap_by_cluster or {}).get("clusters") or {}
+        cluster_counts = state.model_meta.get("cluster_counts_train") or {}
+
+        weighted_num = 0.0
+        weighted_den = 0.0
+        unweighted = []
+        for cid, c in by_cluster.items():
+            bv = (c or {}).get("base_value")
+            if bv is None:
+                continue
+            unweighted.append(float(bv))
+            w = float(cluster_counts.get(str(cid), cluster_counts.get(cid, 0)) or 0)
+            if w > 0:
+                weighted_num += float(bv) * w
+                weighted_den += w
+        if weighted_den > 0:
+            overall_base = weighted_num / weighted_den
+        elif unweighted:
+            overall_base = sum(unweighted) / len(unweighted)
+        else:
+            overall_base = None
+
         return {
             "scope": "overall",
             "cluster_id": None,
-            "base_value": None,
+            "base_value": overall_base,
             "shap_importance": state.global_shap,
             "top_features": list(state.global_shap.keys())[:20],
             "available_clusters": sorted(
-                [
-                    int(k)
-                    for k in (state.global_shap_by_cluster or {}).get("clusters", {}).keys()
-                    if str(k).isdigit()
-                ]
+                [int(k) for k in by_cluster.keys() if str(k).isdigit()]
             ),
         }
 

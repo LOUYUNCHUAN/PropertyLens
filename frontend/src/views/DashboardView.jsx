@@ -367,7 +367,7 @@ export default function DashboardView() {
   const [trendData, setTrendData] = useState([])
   const [townStats, setTownStats] = useState([])
   const [modelMeta, setModelMeta] = useState(null)
-  const [summaryYear, setSummaryYear] = useState(2024)
+  const [summaryYear, setSummaryYear] = useState(null)
   const [totalTxns, setTotalTxns] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -380,7 +380,13 @@ export default function DashboardView() {
           getModelMeta()
         ])
         const raw = trendsRes.data?.trends || []
-        const yr = townsRes.data?.year || 2024
+        const latestYearInTrends = raw.length
+          ? Math.max(...raw.map((d) => Number(d.year)).filter((y) => Number.isFinite(y)))
+          : null
+        const yr = townsRes.data?.year ?? latestYearInTrends
+        if (yr == null) {
+          throw new Error('Backend returned no year data — check /api/analytics/town-summary')
+        }
         setSummaryYear(yr)
         setTotalTxns(townsRes.data?.total_transactions || 0)
         setTrendData(
@@ -488,7 +494,7 @@ export default function DashboardView() {
   }
 
   return (
-    <div style={{ maxWidth: '1140px', margin: '0 auto', padding: '0 4px' }}>
+    <div style={{ width: '100%', padding: '0 4px' }}>
       <div
         style={{
           background: 'var(--bg-card)',

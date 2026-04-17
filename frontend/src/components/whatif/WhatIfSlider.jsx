@@ -13,6 +13,9 @@ export function WhatIfSlider({
   hint
 }) {
   const hasChanged = value !== originalValue
+  const baselinePct =
+    max > min ? ((Number(originalValue) - min) / (max - min)) * 100 : 0
+  const baselineLeft = Math.max(0, Math.min(100, baselinePct))
 
   return (
     <div className="space-y-1.5">
@@ -38,15 +41,23 @@ export function WhatIfSlider({
         </p>
       </div>
 
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-gray-200 accent-emerald-600"
-      />
+      <div className="relative">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+        />
+        <div
+          className="pointer-events-none absolute -top-1 h-3.5 w-px bg-foreground/60"
+          style={{ left: `calc(${baselineLeft}% - 0.5px)` }}
+          aria-hidden
+          title={`Baseline: ${formatValue(originalValue)}`}
+        />
+      </div>
 
       <div className="flex justify-between">
         <span className="text-[10px] text-muted-foreground">{formatValue(min)}</span>

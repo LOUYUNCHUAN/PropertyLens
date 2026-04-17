@@ -111,9 +111,17 @@ async def lifespan(app: FastAPI):
     )
 
     meta_path = ARTIFACTS_ROOT / "hybrid_cluster_meta.json"
-    if meta_path.exists():
-        with open(meta_path) as f:
-            state.model_meta = json.load(f)
+    if not meta_path.exists():
+        raise RuntimeError(
+            f"Required model metadata missing: {meta_path}. "
+            "Run 03_ml_layer_hybrid/02_hybrid_ensemble.ipynb to regenerate."
+        )
+    with open(meta_path) as f:
+        state.model_meta = json.load(f)
+    if not state.model_meta.get("test_metrics"):
+        raise RuntimeError(
+            f"{meta_path} is missing 'test_metrics'. Retrain the hybrid ensemble."
+        )
 
     print("✅ Hybrid cluster artefacts loaded")
     print(f"   Features: {len(state.feature_cols)}")
@@ -298,39 +306,39 @@ def get_policy_impact(town: str):
 @app.get("/api/model-meta")
 def model_meta():
     """Model metadata and test-set metrics for frontend display."""
-    meta = state.model_meta or {}
-    test = meta.get("test_metrics", {})
+    meta = state.model_meta
+    test = meta["test_metrics"]
     return {
-        "model_name": meta.get("model_name", "Hybrid Cluster Ensemble"),
-        "model_type": meta.get("model_type", "cluster_routed_meta_stack"),
+        "model_name": meta["model_name"],
+        "model_type": meta["model_type"],
         "base_models": meta.get("base_models", []),
-        "meta_learner": meta.get("meta_learner", "Ridge"),
-        "n_clusters": meta.get("n_clusters", 0),
-        "n_features": meta.get("n_features", len(state.feature_cols) if state.feature_cols else 0),
-        "r2": test.get("r2", 0.9658),
-        "rmse": test.get("rmse", 37791),
-        "mape_pct": test.get("mape_pct", 4.01),
-        "mae": test.get("mae", 26534),
-        "train_size": meta.get("train_size", 0),
-        "test_size": meta.get("test_size", 0),
-        "total_transactions": meta.get("train_size", 0) + meta.get("val_size", 0) + meta.get("test_size", 0),
+        "meta_learner": meta.get("meta_learner"),
+        "n_clusters": meta["n_clusters"],
+        "n_features": meta.get("n_features", len(state.feature_cols)),
+        "r2": test["r2"],
+        "rmse": test["rmse"],
+        "mape_pct": test["mape_pct"],
+        "mae": test["mae"],
+        "train_size": meta["train_size"],
+        "test_size": meta["test_size"],
+        "total_transactions": meta["train_size"] + meta.get("val_size", 0) + meta["test_size"],
     }
 
 
 @app.get("/health")
 def health():
-    meta = state.model_meta or {}
-    test = meta.get("test_metrics", {})
+    meta = state.model_meta
+    test = meta["test_metrics"]
     return {
         "status": "ok",
-        "model": meta.get("model_name", "hybrid_cluster"),
+        "model": meta["model_name"],
         "artifacts_dir": str(ARTIFACTS_ROOT),
-        "rmse": test.get("rmse", 37791),
-        "r2": test.get("r2", 0.9658),
-        "mape_pct": test.get("mape_pct", 4.01),
-        "features": len(state.feature_cols) if state.feature_cols else 0,
+        "rmse": test["rmse"],
+        "r2": test["r2"],
+        "mape_pct": test["mape_pct"],
+        "features": len(state.feature_cols),
         "normalised_model_loaded": False,
         "ensemble_mode": True,
-        "ensemble_type": meta.get("model_type", "cluster_routed_meta_stack"),
+        "ensemble_type": meta["model_type"],
     }
 

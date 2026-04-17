@@ -1,85 +1,53 @@
 /**
- * Smart Score for shortlist rows — computed client-side + POST /api/validate-listing.
- * Maps backend wishlist detail + validate response shapes.
+ * Smart Score for shortlist rows — pure deal-quality, computed client-side from
+ * the frozen wishlist snapshot + one POST /api/validate-listing per row.
+ *
+ * Three pillars: Price vs model (50) + Comp agreement (35) + Lease quality (15).
+ * Apriori violations and wide confidence bands are surfaced as non-scored flags.
  */
 
-import globalShapMeans from './globalShapMeans.json'
+const clamp = (lo, hi, x) => Math.max(lo, Math.min(hi, x))
 
-const SHAP_MEAN_EPS = 1e-9
-/** When school+MRT |SHAP| are each near their global means (ratio ~1), avgNorm ~1 => ~10/20 fundamentals. */
-const FUNDAMENTALS_SCALE = 10
-
-/**
- * Fundamentals subscore (0–20) from SHAP: school + MRT drivers normalized by global mean |SHAP|
- * so huge features (e.g. transaction_year) do not shrink the share to zero.
- */
-export function fundamentalsScoreFromShap(shap, means = globalShapMeans) {
-  const m = means || globalShapMeans
-  const meanWeighted = Number(m.primary_school_quality_1km_weighted) || SHAP_MEAN_EPS
-  const meanMrt = Number(m.dist_to_mrt_m) || SHAP_MEAN_EPS
-  const meanDistSchool = Number(m.dist_to_nearest_school_m) || SHAP_MEAN_EPS
-
-  let schoolVal = 0
-  let schoolDenom = meanWeighted
-  const w = shap?.primary_school_quality_1km_weighted
-  const t = shap?.primary_school_top_quality_1km
-  const d = shap?.dist_to_nearest_school_m
-  if (w != null) {
-    schoolVal = Math.abs(Number(w) || 0)
-    schoolDenom = meanWeighted
-  } else if (t != null) {
-    schoolVal = Math.abs(Number(t) || 0)
-    schoolDenom = meanWeighted
-  } else if (d != null) {
-    schoolVal = Math.abs(Number(d) || 0)
-    schoolDenom = meanDistSchool
-  }
-
-  const normSchool = schoolVal / Math.max(schoolDenom, SHAP_MEAN_EPS)
-  const mrtRaw = shap?.dist_to_mrt_m
-  const mrtVal = mrtRaw != null ? Math.abs(Number(mrtRaw) || 0) : 0
-  const normMrt = mrtVal / Math.max(meanMrt, SHAP_MEAN_EPS)
-
-  const avgNorm = (normSchool + normMrt) / 2
-  return Math.min(20, FUNDAMENTALS_SCALE * avgNorm)
+function median(values) {
+  const arr = values.filter((v) => Number.isFinite(v)).slice().sort((a, b) => a - b)
+  if (arr.length === 0) return null
+  const mid = Math.floor(arr.length / 2)
+  return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2
 }
 
 export function wishlistDetailToSnapshot(detail) {
   if (!detail) return null
-  const listing_price = detail.listing_price
-  const model_estimate = detail.predicted_price
   const shapArr = detail.shap_snapshot_json || []
   const shap_values = {}
   for (const row of shapArr) {
     if (row && row.feature != null) shap_values[row.feature] = row.shap_value
   }
   const cbr_matches = (detail.cbr_snapshot_json || []).map((c) => ({
-    match_score: c.similarity_pct ?? c.match_score ?? 0
+    match_score: c.similarity_pct ?? c.match_score ?? 0,
+    resale_price: c.resale_price ?? null
   }))
+  const payload = detail.payload_json || {}
   return {
-    listing_price,
-    model_estimate,
+    listing_price: detail.listing_price,
+    model_estimate: detail.predicted_price,
+    confidence_low: detail.confidence_low ?? null,
+    confidence_high: detail.confidence_high ?? null,
+    remaining_lease_years:
+      payload.remaining_lease_years != null ? Number(payload.remaining_lease_years) : null,
     shap_values,
     cbr_matches,
-    payload_json: detail.payload_json || {},
-    /** Frozen map snapshot: { mrt, school, hawker, mall } arrays with dist_m */
+    payload_json: payload,
     nearby: detail.map_snapshot_json?.nearby || null
   }
 }
 
-/** Map ValidateResponse to 0–25 from apriori subsystem only. Null if unavailable. */
-export function aprioriPointsFromValidate(data) {
+/** Apriori violation count from /api/validate-listing response. Null if unavailable. */
+export function aprioriViolationCount(data) {
   const a = data?.apriori
   if (!a) return null
-  const v = a.violation_count ?? 0
-  if (v === 0) return 25
-  return Math.max(0, Math.min(25, 25 - v * 5))
+  return Number(a.violation_count ?? 0)
 }
 
-/**
- * POST /api/validate-listing body: either top-level scalars (no `flat`) or `{ asking_price, flat }`.
- * Apriori only needs scalars; nested `flat` must satisfy full PredictRequest and often 422s on partial extension payloads.
- */
 export function buildValidateListingRequestBody(detail) {
   const p = detail?.payload_json
   if (!p || typeof p !== 'object') return null
@@ -115,75 +83,114 @@ export function buildValidateListingRequestBody(detail) {
   return { mode: 'flat', body: { asking_price, flat: p } }
 }
 
-export function computeScoreComponents(snap, aprioriScore) {
-  const modelEst = snap?.model_estimate
-  let valueGapScore = 0
-  let vsModel = 0
-  let hasValueGap = false
-  if (
-    snap?.listing_price != null &&
-    modelEst != null &&
-    Number(modelEst) > 0
-  ) {
-    hasValueGap = true
-    vsModel = (snap.listing_price - modelEst) / modelEst
-    valueGapScore = Math.max(
-      0,
-      Math.min(30, 30 - vsModel * 100 * 1.5)
-    )
+// ---------- Pillar 1: Price vs model (max 50) ----------
+// Peak (50) is reached at -5% below model and held to -15%. Above -5% the score
+// falls roughly 2.5 points per percent until +15%, where it hits zero.
+// Wide confidence bands shrink the whole component (we trust the model less).
+export function priceVsModelScore(snap) {
+  const listing = Number(snap?.listing_price)
+  const predicted = Number(snap?.model_estimate)
+  if (!(listing > 0) || !(predicted > 0)) {
+    return { score: 0, present: false, gap: null, confTrust: 1 }
+  }
+  const gap = (listing - predicted) / predicted
+  const lo = Number(snap?.confidence_low)
+  const hi = Number(snap?.confidence_high)
+  const bandWidth = Number.isFinite(lo) && Number.isFinite(hi) && hi > lo ? (hi - lo) / predicted : 0
+  const confTrust = clamp(0.5, 1.0, 1 - bandWidth)
+  // gap = -0.05 → premium 0; gap = +0.15 → premium 0.20 → 50 - 0.20*100*2.5 = 0
+  const premium = Math.max(0, gap + 0.05)
+  const raw = 50 - premium * 100 * 2.5
+  const score = clamp(0, 50, raw) * confTrust
+  return { score, present: true, gap, confTrust }
+}
+
+// ---------- Pillar 2: Comp agreement (max 35) ----------
+// Compare listing to median sale price of top-3 CBR comps. Reward listings at or
+// below the comp median; penalise above. Falls back to 0 / "few comps" flag if
+// fewer than 3 comps carry a resale_price.
+export function compAgreementScore(snap) {
+  const listing = Number(snap?.listing_price)
+  const top = (snap?.cbr_matches || []).slice(0, 3)
+  const prices = top.map((c) => Number(c.resale_price)).filter((p) => p > 0)
+  if (!(listing > 0) || prices.length === 0) {
+    return { score: 0, present: false, compGap: null, usableComps: prices.length }
+  }
+  const med = median(prices)
+  if (!(med > 0)) {
+    return { score: 0, present: false, compGap: null, usableComps: prices.length }
+  }
+  const compGap = (listing - med) / med
+  const premium = Math.max(0, compGap)
+  const raw = 35 - premium * 100 * 1.5
+  let score = clamp(0, 35, raw)
+  // Soft penalty when we have fewer than 3 comps to lean on
+  if (prices.length < 3) score *= prices.length / 3
+  return { score, present: true, compGap, usableComps: prices.length }
+}
+
+// ---------- Pillar 3: Lease quality (max 15) ----------
+export function leaseQualityScore(snap) {
+  const years = Number(snap?.remaining_lease_years)
+  if (!Number.isFinite(years) || years <= 0) {
+    return { score: 0, present: false, years: null }
+  }
+  let score
+  if (years >= 90) score = 15
+  else if (years >= 60) score = 10 + ((years - 60) / 30) * 5
+  else if (years >= 40) score = 5 + ((years - 40) / 20) * 5
+  else if (years >= 30) score = ((years - 30) / 10) * 5
+  else score = 0
+  return { score, present: true, years }
+}
+
+// ---------- Combined ----------
+export function computeScoreComponents(snap, aprioriViolations = null) {
+  const price = priceVsModelScore(snap)
+  const comps = compAgreementScore(snap)
+  const lease = leaseQualityScore(snap)
+
+  const aprioriV =
+    typeof aprioriViolations === 'number' && Number.isFinite(aprioriViolations)
+      ? aprioriViolations
+      : null
+
+  const bandWidth =
+    price.present && Number.isFinite(price.confTrust) ? 1 - price.confTrust : 0
+  const flags = {
+    apriori: aprioriV != null && aprioriV > 0 ? aprioriV : 0,
+    aprioriAvailable: aprioriV != null,
+    wideBand: bandWidth > 0.0001,
+    fewComps: comps.present && comps.usableComps < 3
   }
 
-  const topCBR = (snap.cbr_matches || []).slice(0, 3)
-  const hasCbr = topCBR.length > 0
-  const avgCBR = hasCbr
-    ? topCBR.reduce((s, c) => s + (Number(c.match_score) || 0), 0) /
-      topCBR.length
-    : null
-  const cbrScore = hasCbr ? (avgCBR / 100) * 25 : 0
-
-  const shap = snap.shap_values || {}
-  const fundamentalsScore = fundamentalsScoreFromShap(shap)
-
-  const hasApriori =
-    aprioriScore != null &&
-    typeof aprioriScore === 'number' &&
-    Number.isFinite(aprioriScore)
-  const apriori = hasApriori ? aprioriScore : 0
-
   return {
-    valueGapScore,
-    cbrScore,
-    aprioriScore: apriori,
-    fundamentalsScore,
-    vsModel,
-    avgCBR,
+    priceScore: price.score,
+    compScore: comps.score,
+    leaseScore: lease.score,
+    gap: price.gap,
+    compGap: comps.compGap,
+    leaseYears: lease.years,
+    confTrust: price.confTrust,
+    flags,
     presence: {
-      valueGap: hasValueGap,
-      cbr: hasCbr,
-      apriori: hasApriori
+      price: price.present,
+      comps: comps.present,
+      lease: lease.present
     }
   }
 }
 
 export function sumComponents(c) {
   return Math.round(
-    Math.min(
-      100,
-      Math.max(
-        0,
-        c.valueGapScore +
-          c.cbrScore +
-          c.aprioriScore +
-          c.fundamentalsScore
-      )
-    )
+    clamp(0, 100, (c.priceScore || 0) + (c.compScore || 0) + (c.leaseScore || 0))
   )
 }
 
 export function smartScoreComplete(components) {
   const p = components?.presence
   if (!p) return true
-  return !!(p.valueGap && p.cbr && p.apriori)
+  return !!(p.price && p.comps && p.lease)
 }
 
 export function getBadge(score, options = {}) {
@@ -191,78 +198,62 @@ export function getBadge(score, options = {}) {
   if (!complete) {
     return { label: 'Incomplete', color: 'slate', emoji: '◽' }
   }
-  if (score >= 70)
-    return { label: 'Strong', color: 'green', emoji: '🟢' }
-  if (score >= 45)
-    return { label: 'Fair', color: 'amber', emoji: '🟡' }
+  if (score >= 75) return { label: 'Strong deal', color: 'green', emoji: '🟢' }
+  if (score >= 50) return { label: 'Fair', color: 'amber', emoji: '🟡' }
   return { label: 'Overpriced', color: 'red', emoji: '🔴' }
 }
 
-/** Tooltip line for shortlist Smart Score chip. */
 export function smartScoreBreakdownTitle(components) {
   if (!components) return ''
   const p = components.presence || {}
-  const seg = (ok, ptsKey) =>
-    ok === false ? '—' : String(Math.round(components[ptsKey] ?? 0))
-  const v = seg(p.valueGap, 'valueGapScore')
-  const c = seg(p.cbr, 'cbrScore')
-  const r = seg(p.apriori, 'aprioriScore')
-  const f = String(Math.round(components.fundamentalsScore ?? 0))
-  const parts = [`Value gap: ${v} · CBR: ${c} · Rules: ${r} · Fundamentals: ${f}`]
+  const seg = (ok, key) =>
+    ok === false ? '—' : String(Math.round(components[key] ?? 0))
+  const price = seg(p.price, 'priceScore')
+  const comps = seg(p.comps, 'compScore')
+  const lease = seg(p.lease, 'leaseScore')
+  const parts = [`Price: ${price} · Comparable sales: ${comps} · Lease: ${lease}`]
   if (!smartScoreComplete(components)) {
     parts.unshift('Partial score — some inputs missing.')
   }
+  const f = components.flags || {}
+  const flagBits = []
+  if (f.apriori > 0) flagBits.push(`${f.apriori} rule violation${f.apriori > 1 ? 's' : ''}`)
+  if (f.wideBand) flagBits.push('wide confidence band')
+  if (f.fewComps) flagBits.push('few comps')
+  if (flagBits.length) parts.push(`Flags: ${flagBits.join(', ')}.`)
   return parts.join(' ')
 }
 
-const DRIVER_LABELS = {
-  floor_area_sqm: 'large floor area',
-  primary_school_quality_1km_weighted: 'strong school proximity',
-  primary_school_top_quality_1km: 'school proximity',
-  dist_to_nearest_school_m: 'school distance',
-  dist_to_mrt_m: 'MRT distance',
-  lease_remaining_years: 'lease remaining',
-  level_mid: 'floor level',
-  transaction_year: 'market timing',
-  dist_to_highway_m: 'highway proximity',
-  dist_to_foodcourt_m: 'hawker access',
-  mall_weighted_access_3km: 'mall access'
-}
-
 export function generateReason(snap, scores) {
-  const { vsModel, avgCBR, presence } = scores
-  const pr = presence || {
-    valueGap: true,
-    cbr: true,
-    apriori: true
-  }
-  const shap = snap.shap_values || {}
-  const topDriver = Object.entries(shap).sort(
-    (a, b) => Math.abs(b[1]) - Math.abs(a[1])
-  )[0]
+  const { gap, compGap, presence } = scores
+  const pr = presence || { price: true, comps: true, lease: true }
 
-  const driverLabel =
-    DRIVER_LABELS[topDriver?.[0]] ?? topDriver?.[0]?.replace(/_/g, ' ') ?? 'features'
-  const driverEffect = (topDriver?.[1] ?? 0) > 0 ? 'supports' : 'drags'
-
-  const vsPct = vsModel * 100
-  const gapSentence = !pr.valueGap
+  const gapPct = gap != null ? gap * 100 : null
+  const gapSentence = !pr.price
     ? 'Listing vs model comparison unavailable.'
-    : vsPct < -5
-      ? `Listed ${Math.abs(vsPct).toFixed(1)}% below model estimate.`
-      : vsPct > 10
-        ? `Listed ${vsPct.toFixed(1)}% above model estimate.`
+    : gapPct < -5
+      ? `Listed ${Math.abs(gapPct).toFixed(1)}% below the model — looks like a real bargain.`
+      : gapPct > 10
+        ? `Listed ${gapPct.toFixed(1)}% above the model.`
         : `Listed close to model estimate.`
 
-  const cbrSentence = !pr.cbr
-    ? 'Comparable data unavailable.'
-    : avgCBR >= 80
-      ? `Comparables strongly support the price.`
-      : avgCBR >= 60
-        ? `Comparables partially support the price.`
-        : `Limited comparable support.`
+  const compPct = compGap != null ? compGap * 100 : null
+  const compSentence = !pr.comps
+    ? 'No comparable sales available.'
+    : compPct < -3
+      ? `Recent comps sold ~${Math.abs(compPct).toFixed(1)}% higher.`
+      : compPct > 3
+        ? `Recent comps sold ~${compPct.toFixed(1)}% lower — comps disagree.`
+        : `Recent comps agree on the price.`
 
-  const ruleBit = !pr.apriori ? 'Rule validation unavailable. ' : ''
+  const leaseYears = scores.leaseYears
+  const leaseSentence = !pr.lease
+    ? ''
+    : leaseYears >= 80
+      ? ''
+      : leaseYears >= 50
+        ? ` ${Math.round(leaseYears)} years lease left.`
+        : ` Short lease (${Math.round(leaseYears)} yrs) — financing/CPF limits apply.`
 
-  return `${ruleBit}${gapSentence} ${driverLabel} ${driverEffect} value. ${cbrSentence}`
+  return `${gapSentence} ${compSentence}${leaseSentence}`
 }

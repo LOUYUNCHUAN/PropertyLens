@@ -8,14 +8,29 @@ import {
   mergeNearbyDeduped
 } from '@/lib/mapAmenities.js'
 
+function readThemeColor(varName, fallback) {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const root = document.documentElement
+    const raw = getComputedStyle(root).getPropertyValue(varName).trim()
+    if (!raw) return fallback
+    if (raw.startsWith('#') || raw.startsWith('rgb') || raw.startsWith('hsl')) return raw
+    return `hsl(${raw})`
+  } catch {
+    return fallback
+  }
+}
+
 function listingNumberIcon(n) {
+  const primary = readThemeColor('--primary', '#4a7c6f')
+  const onPrimary = readThemeColor('--primary-foreground', '#ffffff')
   return L.divIcon({
     className: '',
     html: `<div style="
       width:28px;height:28px;border-radius:50%;
-      background:#4a7c6f;color:white;font-weight:800;font-size:12px;
+      background:${primary};color:${onPrimary};font-weight:800;font-size:12px;
       display:flex;align-items:center;justify-content:center;
-      border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);
+      border:2px solid ${onPrimary};box-shadow:0 2px 8px rgba(0,0,0,0.25);
     ">${n}</div>`,
     iconSize: [28, 28],
     iconAnchor: [14, 14]
@@ -155,14 +170,18 @@ export default function ShortlistMapView({
 
       const m = L.marker(latlng, { icon: listingNumberIcon(num) }).addTo(map)
       const rid = row.id
+      const popupPrimary = readThemeColor('--primary', '#4a7c6f')
+      const popupOnPrimary = readThemeColor('--primary-foreground', '#ffffff')
+      const popupHeading = readThemeColor('--foreground', '#1a1714')
+      const popupMuted = readThemeColor('--muted-foreground', '#64748b')
       m.bindPopup(
         `<div class="shortlist-map-popup" style="font-family:Inter,system-ui,sans-serif;font-size:12px;min-width:160px">
-          <div style="font-weight:700;margin-bottom:4px;color:#1a1714">${
+          <div style="font-weight:700;margin-bottom:4px;color:${popupHeading}">${
             row.display_label || row.address_short || 'Listing'
           }</div>
-          <div style="color:#64748b">${row.town || '—'}</div>
-          <div style="margin-top:6px;color:#334155">${gapStr}</div>
-          <button type="button" class="shortlist-map-popup-btn" style="margin-top:8px;padding:6px 10px;background:#4a7c6f;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;width:100%">Open detail</button>
+          <div style="color:${popupMuted}">${row.town || '—'}</div>
+          <div style="margin-top:6px;color:${popupMuted}">${gapStr}</div>
+          <button type="button" class="shortlist-map-popup-btn" style="margin-top:8px;padding:6px 10px;background:${popupPrimary};color:${popupOnPrimary};border:none;border-radius:6px;cursor:pointer;font-size:12px;width:100%">Open detail</button>
         </div>`,
         { maxWidth: 280 }
       )
@@ -233,8 +252,8 @@ export default function ShortlistMapView({
               onClick={() => setActiveCategory(cat.key)}
               className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[12px] font-medium transition-colors ${
                 isActive
-                  ? 'border-emerald-700 bg-emerald-50 text-emerald-900'
-                  : 'border-[color:var(--border)] bg-white text-[color:var(--ink-muted)] hover:bg-[color:var(--bg-sidebar)]'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-background text-muted-foreground hover:bg-muted/60'
               }`}
             >
               <span aria-hidden>{cat.icon}</span>
@@ -243,8 +262,8 @@ export default function ShortlistMapView({
                 <span
                   className={`rounded-full px-1.5 text-[10px] font-bold ${
                     isActive
-                      ? 'bg-emerald-700 text-white'
-                      : 'bg-[color:var(--border)] text-[color:var(--ink-muted)]'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   {count}
@@ -256,7 +275,7 @@ export default function ShortlistMapView({
       </div>
 
       <div
-        className="relative overflow-hidden rounded-xl border border-[color:var(--border)]"
+        className="relative overflow-hidden rounded-xl border border-border"
         style={{ minHeight: 480 }}
       >
         <div ref={mapRef} className="h-[480px] w-full" />

@@ -10,10 +10,11 @@ import {
   CardTitle
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { FormField } from '@/components/ui/form-field'
 import BuyerStepCard from '@/components/buyer/BuyerStepCard.jsx'
 import BuyerStepProgressBar from '@/components/buyer/BuyerStepProgressBar.jsx'
 import CbrDivergenceWarning from '@/components/CbrDivergenceWarning.jsx'
+import { PriceRangeCard } from '@/components/price-range-card.jsx'
 import { formatConfidenceBandK } from '@/lib/formatPrice.js'
 import {
   buildDriverCards,
@@ -50,17 +51,6 @@ const SELLER_SEGMENT_LABELS = [
   'What-if',
   'Strategy'
 ]
-
-function FormField({ label, children }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </Label>
-      {children}
-    </div>
-  )
-}
 
 export default function SellerResultsStepFlow({
   resultsKey = 0,
@@ -245,6 +235,8 @@ export default function SellerResultsStepFlow({
   const quickPickAi = Math.round(predicted)
   const quickPickPlus3 = Math.round(Math.round(predicted * 1.03 / 1000) * 1000)
   const quickPickHigh = high != null ? Math.round(high) : quickPickAi
+  const trendBufferPct = Math.round((suggestedListingMultiplier - 1) * 1000) / 10
+  const quickPickTrend = Math.round(predicted * suggestedListingMultiplier)
 
   return (
     <div className="space-y-5">
@@ -259,6 +251,16 @@ export default function SellerResultsStepFlow({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+            Our model estimates this flat is worth around{' '}
+            <span className="font-semibold text-foreground">{fmt(predicted)}</span> in{' '}
+            {form?.sale_month || 'the chosen month'}. With your town&apos;s recent {trendBufferPct >= 0 ? '+' : ''}
+            {trendBufferPct}% trend, a typical listing price would be{' '}
+            <span className="font-semibold text-foreground">{fmt(quickPickTrend)}</span>. The
+            sections below show what drives this number, comparable sales, and how to position
+            your asking price.
+          </p>
+
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -454,15 +456,16 @@ export default function SellerResultsStepFlow({
                   ))}
                 </div>
                 {Math.abs(marketTimingShap) > 0.01 && (
-                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:bg-amber-950/30">
-                    <p className="text-xs text-amber-900 dark:text-amber-100">
+                  <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 dark:border-sky-900 dark:bg-sky-950/30">
+                    <p className="text-xs text-sky-900 dark:text-sky-100">
                       <span className="font-semibold">
-                        📈 Market timing adds ~{fmt(Math.abs(marketTimingShap))}
-                        {marketTimingShap < 0 ? ' (downward)' : ''}
+                        📈 Market tailwind {marketTimingShap >= 0 ? '+' : '−'}
+                        {fmt(Math.abs(marketTimingShap))}
                       </span>
                       {' — '}
-                      reflects {saleYearNote || new Date().getFullYear()} market levels; applies broadly,
-                      not only to this unit.
+                      the broader {saleYearNote || new Date().getFullYear()} market{' '}
+                      {marketTimingShap >= 0 ? 'is lifting' : 'is pulling down'} prices for all flats
+                      like yours, not just this one. Already baked into your fair value.
                     </p>
                   </div>
                 )}
@@ -522,8 +525,9 @@ export default function SellerResultsStepFlow({
             loading={false}
           >
             <p className="text-xs text-muted-foreground">
-              Start from a fair anchor, then stress-test with the quick picks. We validate against
-              Apriori and surrogate rules as you type.
+              The input below is anchored at the <strong>fair market estimate</strong> from the model.
+              Use the quick picks to explore wider bands — each label explains where the number comes
+              from. We validate against Apriori and surrogate rules as you type.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Button
@@ -531,8 +535,9 @@ export default function SellerResultsStepFlow({
                 size="sm"
                 variant="outline"
                 onClick={() => setAskingPrice(quickPickAi)}
+                title="Reset to the model's fair market estimate"
               >
-                AI estimate ({fmt(quickPickAi)})
+                Fair estimate ({fmt(quickPickAi)})
               </Button>
               <Button
                 type="button"
@@ -540,8 +545,19 @@ export default function SellerResultsStepFlow({
                 variant="outline"
                 onClick={() => setAskingPrice(quickPickPlus3)}
               >
-                +3% (rounded {fmt(quickPickPlus3)})
+                +3% buffer ({fmt(quickPickPlus3)})
               </Button>
+              {Math.abs(trendBufferPct) >= 0.5 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setAskingPrice(quickPickTrend)}
+                  title={`Based on recent town-level YoY trend (${trendBufferPct >= 0 ? '+' : ''}${trendBufferPct}%)`}
+                >
+                  Town trend ({trendBufferPct >= 0 ? '+' : ''}{trendBufferPct}% · {fmt(quickPickTrend)})
+                </Button>
+              )}
               <Button
                 type="button"
                 size="sm"
@@ -602,6 +618,19 @@ export default function SellerResultsStepFlow({
               predictedPrice={predicted}
               loading={cspLoading}
             />
+            {askingPrice && predicted != null && (
+              <div className="mt-6">
+                <PriceRangeCard
+                  aiEstimate={predicted}
+                  cbrMedian={results?.predict?.cbr_check?.cbr_median ?? predicted}
+                  listingPrice={askingPrice}
+                  confidenceLow={low ?? predicted * 0.92}
+                  confidenceHigh={ceilingDisplay}
+                  cbrSampleSize={comparables?.length ?? 5}
+                  onEditListing={() => setAskingPrice(null)}
+                />
+              </div>
+            )}
           </BuyerStepCard>
 
           <BuyerStepCard

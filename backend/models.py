@@ -17,7 +17,9 @@ class PredictRequest(BaseSchema):
 
     # Location features
     dist_nearest_mrt_km: float = Field(..., ge=0, le=10)
-    dist_to_cbd_km: float = Field(..., ge=0, le=40)
+    # dist_to_cbd_km is not a feature in the 77-column hybrid model (dropped during
+    # feature selection). Accepted for backwards compat but ignored by predict.
+    dist_to_cbd_km: float = Field(default=0.0, ge=0, le=40)
     dist_nearest_primary_school_km: float = Field(default=0.5)
     dist_nearest_top_school_km: float = Field(default=1.5)
     dist_nearest_hawker_km: float = Field(default=0.3)
@@ -86,8 +88,8 @@ class PredictResponse(BaseSchema):
     confidence_high: float
     price_per_sqm: float
     model_used: str = "hybrid_cluster_ensemble"
-    rmse: float = 37791.0
-    r2: float = 0.9658
+    rmse: float
+    r2: float
     calibration_applied: bool = False
     ensemble_detail: Optional[Dict] = None
     cbr_check: Optional[CbrCheck] = None
