@@ -28,6 +28,7 @@ __pycache__/
 backend/.venv/
 frontend/node_modules/
 frontend/dist/
+frontend/.vite/
 
 # ── Large / downloaded data (not in git — use notebooks/00_project_setup_environment.ipynb) ──
 data/processed/
@@ -64,3 +65,7 @@ hf_cache/
 notebooks/**/outputs/
 **/outputs/*.joblib
 **/outputs/*.parquet
+
+# ── Notebook caches / artifacts (keep out of git) ───────────────────
+notebooks/03_ml_layer_hybrid/artifacts/
+notebooks/05_chatbot/*.pkl
