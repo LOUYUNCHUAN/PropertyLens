@@ -164,6 +164,18 @@ export const deleteWishlistItem = (id, username) =>
     (r) => r.data
   )
 
+/**
+ * Natural-language filter + sort over saved shortlist (Ollama → JSON plan on server).
+ * Optional: mrt_max_dist_m / highway_min_dist_m (meters) override compiled constraints.
+ * Long timeout: server may call Ollama for up to 60s.
+ */
+export const nlSearchShortlist = (username, query, limit = 80, opts = {}) =>
+  API.post(
+    '/api/wishlist/nl-search',
+    { username, query, limit, ...opts },
+    { timeout: 120000 }
+  ).then((r) => r.data)
+
 export const sendChat = async (payload) => {
   const res = await API.post('/api/chat', payload, { responseType: 'text' })
   return parseChatSseComplete(res.data || '')

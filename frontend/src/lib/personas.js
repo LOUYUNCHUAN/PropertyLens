@@ -12,19 +12,25 @@ export const PERSONAS = [
     id: 'family',
     label: 'Family',
     emoji: '👨‍👩‍👧',
-    sortLabel: 'Ranked by nearest school + schools within 1km'
+    sortLabel: 'Ranked by nearest school + schools within 1km',
+    sortLegend:
+      '70% how close the nearest school is (up to 1.5 km), 30% how many schools are within 1 km (cap 5). Higher score = better for families.'
   },
   {
     id: 'commuter',
     label: 'Commuter',
     emoji: '💼',
-    sortLabel: 'Ranked by MRT proximity'
+    sortLabel: 'Ranked by MRT proximity',
+    sortLegend:
+      '70% how close the nearest MRT/LRT is (up to 1.2 km), 30% how many stations are within 1 km (cap 3). Higher score = better for commuting.'
   },
   {
     id: 'investor',
     label: 'Investor',
     emoji: '💰',
-    sortLabel: 'Ranked by Smart Score (deal quality)'
+    sortLabel: 'Ranked by Smart Score (60% price vs model, 20% comps, 20% lease)',
+    sortLegend:
+      'Smart Score 0–100: 60% listing vs model, 20% vs comparable sales, 20% remaining lease. Higher = stronger deal signal.'
   }
 ]
 
@@ -52,7 +58,7 @@ function mrtsFromNearby(nearby) {
 }
 
 // Family persona: rank by real schools from the frozen amenities snapshot,
-// not by SHAP. Distance to nearest school + count within 1km, blended 60/40.
+// not by SHAP. Distance to nearest school + count within 1km, blended 70/30.
 const FAMILY_NEAR_THRESHOLD_M = 1500 // distance at which the proximity term hits zero
 const FAMILY_COUNT_TARGET = 5 // count at which the choice term saturates
 
@@ -63,7 +69,7 @@ export function familyScore(snap) {
   const proximity = Math.max(0, 1 - nearestM / FAMILY_NEAR_THRESHOLD_M)
   const countWithin1km = schools.filter((s) => (Number(s.dist_m) || 0) <= 1000).length
   const choice = Math.min(1, countWithin1km / FAMILY_COUNT_TARGET)
-  return proximity * 0.6 + choice * 0.4
+  return proximity * 0.7 + choice * 0.3
 }
 
 export function familyTag(snap) {

@@ -1,0 +1,329 @@
+name,lat,lng,type
+PIE,1.348000,103.742000,expressway
+PIE,1.347636,103.747068,expressway
+PIE,1.347273,103.752136,expressway
+PIE,1.346909,103.757205,expressway
+PIE,1.346545,103.762273,expressway
+PIE,1.346182,103.767341,expressway
+PIE,1.345818,103.772409,expressway
+PIE,1.345455,103.777477,expressway
+PIE,1.345091,103.782545,expressway
+PIE,1.344727,103.787614,expressway
+PIE,1.344364,103.792682,expressway
+PIE,1.344000,103.797750,expressway
+PIE,1.343636,103.802818,expressway
+PIE,1.343273,103.807886,expressway
+PIE,1.342909,103.812955,expressway
+PIE,1.342545,103.818023,expressway
+PIE,1.342182,103.823091,expressway
+PIE,1.341818,103.828159,expressway
+PIE,1.341455,103.833227,expressway
+PIE,1.341091,103.838295,expressway
+PIE,1.340727,103.843364,expressway
+PIE,1.340364,103.848432,expressway
+PIE,1.340000,103.853500,expressway
+PIE,1.339636,103.858568,expressway
+PIE,1.339273,103.863636,expressway
+PIE,1.338909,103.868705,expressway
+PIE,1.338545,103.873773,expressway
+PIE,1.338182,103.878841,expressway
+PIE,1.337818,103.883909,expressway
+PIE,1.337455,103.888977,expressway
+PIE,1.337091,103.894045,expressway
+PIE,1.336727,103.899114,expressway
+PIE,1.336364,103.904182,expressway
+PIE,1.336000,103.909250,expressway
+PIE,1.335636,103.914318,expressway
+PIE,1.335273,103.919386,expressway
+PIE,1.334909,103.924455,expressway
+PIE,1.334545,103.929523,expressway
+PIE,1.334182,103.934591,expressway
+PIE,1.333818,103.939659,expressway
+PIE,1.333455,103.944727,expressway
+PIE,1.333091,103.949795,expressway
+PIE,1.332727,103.954864,expressway
+PIE,1.332364,103.959932,expressway
+PIE,1.332000,103.965000,expressway
+AYE,1.270000,103.780000,expressway
+AYE,1.270588,103.782647,expressway
+AYE,1.271176,103.785294,expressway
+AYE,1.271765,103.787941,expressway
+AYE,1.272353,103.790588,expressway
+AYE,1.272941,103.793235,expressway
+AYE,1.273529,103.795882,expressway
+AYE,1.274118,103.798529,expressway
+AYE,1.274706,103.801176,expressway
+AYE,1.275294,103.803824,expressway
+AYE,1.275882,103.806471,expressway
+AYE,1.276471,103.809118,expressway
+AYE,1.277059,103.811765,expressway
+AYE,1.277647,103.814412,expressway
+AYE,1.278235,103.817059,expressway
+AYE,1.278824,103.819706,expressway
+AYE,1.279412,103.822353,expressway
+AYE,1.280000,103.825000,expressway
+AYE,1.280588,103.827647,expressway
+AYE,1.281176,103.830294,expressway
+AYE,1.281765,103.832941,expressway
+AYE,1.282353,103.835588,expressway
+AYE,1.282941,103.838235,expressway
+AYE,1.283529,103.840882,expressway
+AYE,1.284118,103.843529,expressway
+AYE,1.284706,103.846176,expressway
+AYE,1.285294,103.848824,expressway
+AYE,1.285882,103.851471,expressway
+AYE,1.286471,103.854118,expressway
+AYE,1.287059,103.856765,expressway
+AYE,1.287647,103.859412,expressway
+AYE,1.288235,103.862059,expressway
+AYE,1.288824,103.864706,expressway
+AYE,1.289412,103.867353,expressway
+AYE,1.290000,103.870000,expressway
+CTE,1.300000,103.840000,expressway
+CTE,1.304138,103.839310,expressway
+CTE,1.308276,103.838621,expressway
+CTE,1.312414,103.837931,expressway
+CTE,1.316552,103.837241,expressway
+CTE,1.320690,103.836552,expressway
+CTE,1.324828,103.835862,expressway
+CTE,1.328966,103.835172,expressway
+CTE,1.333103,103.834483,expressway
+CTE,1.337241,103.833793,expressway
+CTE,1.341379,103.833103,expressway
+CTE,1.345517,103.832414,expressway
+CTE,1.349655,103.831724,expressway
+CTE,1.353793,103.831034,expressway
+CTE,1.357931,103.830345,expressway
+CTE,1.362069,103.829655,expressway
+CTE,1.366207,103.828966,expressway
+CTE,1.370345,103.828276,expressway
+CTE,1.374483,103.827586,expressway
+CTE,1.378621,103.826897,expressway
+CTE,1.382759,103.826207,expressway
+CTE,1.386897,103.825517,expressway
+CTE,1.391034,103.824828,expressway
+CTE,1.395172,103.824138,expressway
+CTE,1.399310,103.823448,expressway
+CTE,1.403448,103.822759,expressway
+CTE,1.407586,103.822069,expressway
+CTE,1.411724,103.821379,expressway
+CTE,1.415862,103.820690,expressway
+CTE,1.420000,103.820000,expressway
+BKE,1.450000,103.760000,expressway
+BKE,1.448947,103.761579,expressway
+BKE,1.447895,103.763158,expressway
+BKE,1.446842,103.764737,expressway
+BKE,1.445789,103.766316,expressway
+BKE,1.444737,103.767895,expressway
+BKE,1.443684,103.769474,expressway
+BKE,1.442632,103.771053,expressway
+BKE,1.441579,103.772632,expressway
+BKE,1.440526,103.774211,expressway
+BKE,1.439474,103.775789,expressway
+BKE,1.438421,103.777368,expressway
+BKE,1.437368,103.778947,expressway
+BKE,1.436316,103.780526,expressway
+BKE,1.435263,103.782105,expressway
+BKE,1.434211,103.783684,expressway
+BKE,1.433158,103.785263,expressway
+BKE,1.432105,103.786842,expressway
+BKE,1.431053,103.788421,expressway
+BKE,1.430000,103.790000,expressway
+KJE,1.340000,103.690000,expressway
+KJE,1.339167,103.692083,expressway
+KJE,1.338333,103.694167,expressway
+KJE,1.337500,103.696250,expressway
+KJE,1.336667,103.698333,expressway
+KJE,1.335833,103.700417,expressway
+KJE,1.335000,103.702500,expressway
+KJE,1.334167,103.704583,expressway
+KJE,1.333333,103.706667,expressway
+KJE,1.332500,103.708750,expressway
+KJE,1.331667,103.710833,expressway
+KJE,1.330833,103.712917,expressway
+KJE,1.330000,103.715000,expressway
+KJE,1.329167,103.717083,expressway
+KJE,1.328333,103.719167,expressway
+KJE,1.327500,103.721250,expressway
+KJE,1.326667,103.723333,expressway
+KJE,1.325833,103.725417,expressway
+KJE,1.325000,103.727500,expressway
+KJE,1.324167,103.729583,expressway
+KJE,1.323333,103.731667,expressway
+KJE,1.322500,103.733750,expressway
+KJE,1.321667,103.735833,expressway
+KJE,1.320833,103.737917,expressway
+KJE,1.320000,103.740000,expressway
+SLE,1.420000,103.780000,expressway
+SLE,1.419167,103.783750,expressway
+SLE,1.418333,103.787500,expressway
+SLE,1.417500,103.791250,expressway
+SLE,1.416667,103.795000,expressway
+SLE,1.415833,103.798750,expressway
+SLE,1.415000,103.802500,expressway
+SLE,1.414167,103.806250,expressway
+SLE,1.413333,103.810000,expressway
+SLE,1.412500,103.813750,expressway
+SLE,1.411667,103.817500,expressway
+SLE,1.410833,103.821250,expressway
+SLE,1.410000,103.825000,expressway
+SLE,1.409167,103.828750,expressway
+SLE,1.408333,103.832500,expressway
+SLE,1.407500,103.836250,expressway
+SLE,1.406667,103.840000,expressway
+SLE,1.405833,103.843750,expressway
+SLE,1.405000,103.847500,expressway
+SLE,1.404167,103.851250,expressway
+SLE,1.403333,103.855000,expressway
+SLE,1.402500,103.858750,expressway
+SLE,1.401667,103.862500,expressway
+SLE,1.400833,103.866250,expressway
+SLE,1.400000,103.870000,expressway
+TPE,1.370000,103.900000,expressway
+TPE,1.369655,103.902759,expressway
+TPE,1.369310,103.905517,expressway
+TPE,1.368966,103.908276,expressway
+TPE,1.368621,103.911034,expressway
+TPE,1.368276,103.913793,expressway
+TPE,1.367931,103.916552,expressway
+TPE,1.367586,103.919310,expressway
+TPE,1.367241,103.922069,expressway
+TPE,1.366897,103.924828,expressway
+TPE,1.366552,103.927586,expressway
+TPE,1.366207,103.930345,expressway
+TPE,1.365862,103.933103,expressway
+TPE,1.365517,103.935862,expressway
+TPE,1.365172,103.938621,expressway
+TPE,1.364828,103.941379,expressway
+TPE,1.364483,103.944138,expressway
+TPE,1.364138,103.946897,expressway
+TPE,1.363793,103.949655,expressway
+TPE,1.363448,103.952414,expressway
+TPE,1.363103,103.955172,expressway
+TPE,1.362759,103.957931,expressway
+TPE,1.362414,103.960690,expressway
+TPE,1.362069,103.963448,expressway
+TPE,1.361724,103.966207,expressway
+TPE,1.361379,103.968966,expressway
+TPE,1.361034,103.971724,expressway
+TPE,1.360690,103.974483,expressway
+TPE,1.360345,103.977241,expressway
+TPE,1.360000,103.980000,expressway
+KPE,1.310000,103.870000,expressway
+KPE,1.311667,103.871250,expressway
+KPE,1.313333,103.872500,expressway
+KPE,1.315000,103.873750,expressway
+KPE,1.316667,103.875000,expressway
+KPE,1.318333,103.876250,expressway
+KPE,1.320000,103.877500,expressway
+KPE,1.321667,103.878750,expressway
+KPE,1.323333,103.880000,expressway
+KPE,1.325000,103.881250,expressway
+KPE,1.326667,103.882500,expressway
+KPE,1.328333,103.883750,expressway
+KPE,1.330000,103.885000,expressway
+KPE,1.331667,103.886250,expressway
+KPE,1.333333,103.887500,expressway
+KPE,1.335000,103.888750,expressway
+KPE,1.336667,103.890000,expressway
+KPE,1.338333,103.891250,expressway
+KPE,1.340000,103.892500,expressway
+KPE,1.341667,103.893750,expressway
+KPE,1.343333,103.895000,expressway
+KPE,1.345000,103.896250,expressway
+KPE,1.346667,103.897500,expressway
+KPE,1.348333,103.898750,expressway
+KPE,1.350000,103.900000,expressway
+ECP,1.290000,103.870000,expressway
+ECP,1.290833,103.873333,expressway
+ECP,1.291667,103.876667,expressway
+ECP,1.292500,103.880000,expressway
+ECP,1.293333,103.883333,expressway
+ECP,1.294167,103.886667,expressway
+ECP,1.295000,103.890000,expressway
+ECP,1.295833,103.893333,expressway
+ECP,1.296667,103.896667,expressway
+ECP,1.297500,103.900000,expressway
+ECP,1.298333,103.903333,expressway
+ECP,1.299167,103.906667,expressway
+ECP,1.300000,103.910000,expressway
+ECP,1.300833,103.913333,expressway
+ECP,1.301667,103.916667,expressway
+ECP,1.302500,103.920000,expressway
+ECP,1.303333,103.923333,expressway
+ECP,1.304167,103.926667,expressway
+ECP,1.305000,103.930000,expressway
+ECP,1.305833,103.933333,expressway
+ECP,1.306667,103.936667,expressway
+ECP,1.307500,103.940000,expressway
+ECP,1.308333,103.943333,expressway
+ECP,1.309167,103.946667,expressway
+ECP,1.310000,103.950000,expressway
+MCE,1.280000,103.850000,expressway
+MCE,1.280714,103.851429,expressway
+MCE,1.281429,103.852857,expressway
+MCE,1.282143,103.854286,expressway
+MCE,1.282857,103.855714,expressway
+MCE,1.283571,103.857143,expressway
+MCE,1.284286,103.858571,expressway
+MCE,1.285000,103.860000,expressway
+MCE,1.285714,103.861429,expressway
+MCE,1.286429,103.862857,expressway
+MCE,1.287143,103.864286,expressway
+MCE,1.287857,103.865714,expressway
+MCE,1.288571,103.867143,expressway
+MCE,1.289286,103.868571,expressway
+MCE,1.290000,103.870000,expressway
+Bukit Timah Rd,1.320000,103.780000,primary
+Bukit Timah Rd,1.321053,103.778947,primary
+Bukit Timah Rd,1.322105,103.777895,primary
+Bukit Timah Rd,1.323158,103.776842,primary
+Bukit Timah Rd,1.324211,103.775789,primary
+Bukit Timah Rd,1.325263,103.774737,primary
+Bukit Timah Rd,1.326316,103.773684,primary
+Bukit Timah Rd,1.327368,103.772632,primary
+Bukit Timah Rd,1.328421,103.771579,primary
+Bukit Timah Rd,1.329474,103.770526,primary
+Bukit Timah Rd,1.330526,103.769474,primary
+Bukit Timah Rd,1.331579,103.768421,primary
+Bukit Timah Rd,1.332632,103.767368,primary
+Bukit Timah Rd,1.333684,103.766316,primary
+Bukit Timah Rd,1.334737,103.765263,primary
+Bukit Timah Rd,1.335789,103.764211,primary
+Bukit Timah Rd,1.336842,103.763158,primary
+Bukit Timah Rd,1.337895,103.762105,primary
+Bukit Timah Rd,1.338947,103.761053,primary
+Bukit Timah Rd,1.340000,103.760000,primary
+Upper Serangoon Rd,1.350000,103.870000,primary
+Upper Serangoon Rd,1.351176,103.871765,primary
+Upper Serangoon Rd,1.352353,103.873529,primary
+Upper Serangoon Rd,1.353529,103.875294,primary
+Upper Serangoon Rd,1.354706,103.877059,primary
+Upper Serangoon Rd,1.355882,103.878824,primary
+Upper Serangoon Rd,1.357059,103.880588,primary
+Upper Serangoon Rd,1.358235,103.882353,primary
+Upper Serangoon Rd,1.359412,103.884118,primary
+Upper Serangoon Rd,1.360588,103.885882,primary
+Upper Serangoon Rd,1.361765,103.887647,primary
+Upper Serangoon Rd,1.362941,103.889412,primary
+Upper Serangoon Rd,1.364118,103.891176,primary
+Upper Serangoon Rd,1.365294,103.892941,primary
+Upper Serangoon Rd,1.366471,103.894706,primary
+Upper Serangoon Rd,1.367647,103.896471,primary
+Upper Serangoon Rd,1.368824,103.898235,primary
+Upper Serangoon Rd,1.370000,103.900000,primary
+Bedok North Ave 1 corridor,1.330000,103.920000,primary
+Bedok North Ave 1 corridor,1.330714,103.921429,primary
+Bedok North Ave 1 corridor,1.331429,103.922857,primary
+Bedok North Ave 1 corridor,1.332143,103.924286,primary
+Bedok North Ave 1 corridor,1.332857,103.925714,primary
+Bedok North Ave 1 corridor,1.333571,103.927143,primary
+Bedok North Ave 1 corridor,1.334286,103.928571,primary
+Bedok North Ave 1 corridor,1.335000,103.930000,primary
+Bedok North Ave 1 corridor,1.335714,103.931429,primary
+Bedok North Ave 1 corridor,1.336429,103.932857,primary
+Bedok North Ave 1 corridor,1.337143,103.934286,primary
+Bedok North Ave 1 corridor,1.337857,103.935714,primary
+Bedok North Ave 1 corridor,1.338571,103.937143,primary
+Bedok North Ave 1 corridor,1.339286,103.938571,primary
+Bedok North Ave 1 corridor,1.340000,103.940000,primary

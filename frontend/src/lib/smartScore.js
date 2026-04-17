@@ -2,7 +2,7 @@
  * Smart Score for shortlist rows — pure deal-quality, computed client-side from
  * the frozen wishlist snapshot + one POST /api/validate-listing per row.
  *
- * Three pillars: Price vs model (50) + Comp agreement (35) + Lease quality (15).
+ * Three pillars: Price vs model (60) + Comp agreement (20) + Lease quality (20).
  * Apriori violations and wide confidence bands are surfaced as non-scored flags.
  */
 
@@ -83,9 +83,9 @@ export function buildValidateListingRequestBody(detail) {
   return { mode: 'flat', body: { asking_price, flat: p } }
 }
 
-// ---------- Pillar 1: Price vs model (max 50) ----------
-// Peak (50) is reached at -5% below model and held to -15%. Above -5% the score
-// falls roughly 2.5 points per percent until +15%, where it hits zero.
+// ---------- Pillar 1: Price vs model (max 60) ----------
+// Peak (60) is reached at -5% below model and held to -15%. Above -5% the score
+// falls roughly 3 points per percent until +15%, where it hits zero.
 // Wide confidence bands shrink the whole component (we trust the model less).
 export function priceVsModelScore(snap) {
   const listing = Number(snap?.listing_price)
@@ -98,14 +98,14 @@ export function priceVsModelScore(snap) {
   const hi = Number(snap?.confidence_high)
   const bandWidth = Number.isFinite(lo) && Number.isFinite(hi) && hi > lo ? (hi - lo) / predicted : 0
   const confTrust = clamp(0.5, 1.0, 1 - bandWidth)
-  // gap = -0.05 → premium 0; gap = +0.15 → premium 0.20 → 50 - 0.20*100*2.5 = 0
+  // gap = -0.05 → premium 0; gap = +0.15 → premium 0.20 → 60 - 0.20*100*3 = 0
   const premium = Math.max(0, gap + 0.05)
-  const raw = 50 - premium * 100 * 2.5
-  const score = clamp(0, 50, raw) * confTrust
+  const raw = 60 - premium * 100 * 3
+  const score = clamp(0, 60, raw) * confTrust
   return { score, present: true, gap, confTrust }
 }
 
-// ---------- Pillar 2: Comp agreement (max 35) ----------
+// ---------- Pillar 2: Comp agreement (max 20) ----------
 // Compare listing to median sale price of top-3 CBR comps. Reward listings at or
 // below the comp median; penalise above. Falls back to 0 / "few comps" flag if
 // fewer than 3 comps carry a resale_price.
@@ -122,25 +122,28 @@ export function compAgreementScore(snap) {
   }
   const compGap = (listing - med) / med
   const premium = Math.max(0, compGap)
-  const raw = 35 - premium * 100 * 1.5
-  let score = clamp(0, 35, raw)
+  const raw = 20 - premium * 100 * (30 / 35)
+  let score = clamp(0, 20, raw)
   // Soft penalty when we have fewer than 3 comps to lean on
   if (prices.length < 3) score *= prices.length / 3
   return { score, present: true, compGap, usableComps: prices.length }
 }
 
-// ---------- Pillar 3: Lease quality (max 15) ----------
+const LEASE_MAX = 20
+
+// ---------- Pillar 3: Lease quality (max 20) ----------
 export function leaseQualityScore(snap) {
   const years = Number(snap?.remaining_lease_years)
   if (!Number.isFinite(years) || years <= 0) {
     return { score: 0, present: false, years: null }
   }
-  let score
-  if (years >= 90) score = 15
-  else if (years >= 60) score = 10 + ((years - 60) / 30) * 5
-  else if (years >= 40) score = 5 + ((years - 40) / 20) * 5
-  else if (years >= 30) score = ((years - 30) / 10) * 5
-  else score = 0
+  let score15
+  if (years >= 90) score15 = 15
+  else if (years >= 60) score15 = 10 + ((years - 60) / 30) * 5
+  else if (years >= 40) score15 = 5 + ((years - 40) / 20) * 5
+  else if (years >= 30) score15 = ((years - 30) / 10) * 5
+  else score15 = 0
+  const score = score15 * (LEASE_MAX / 15)
   return { score, present: true, years }
 }
 

@@ -59,8 +59,8 @@ describe('SS-2 Price vs model pillar', () => {
     expect(present).toBe(true)
     expect(gap).toBeCloseTo(-0.05, 3)
     // 8% band → confTrust = 0.92 → ~46
-    expect(score).toBeGreaterThan(40)
-    expect(score).toBeLessThanOrEqual(50)
+    expect(score).toBeGreaterThan(48)
+    expect(score).toBeLessThanOrEqual(60)
   })
 
   it('hits zero around +15% over model', () => {
@@ -108,7 +108,7 @@ describe('SS-3 Comp agreement pillar', () => {
     const { score, present, usableComps } = compAgreementScore(snap)
     expect(present).toBe(true)
     expect(usableComps).toBe(3)
-    expect(score).toBeCloseTo(35, 0)
+    expect(score).toBeCloseTo(20, 0)
   })
 
   it('listing well above comps → low score', () => {
@@ -121,7 +121,7 @@ describe('SS-3 Comp agreement pillar', () => {
       ]
     }
     const { score } = compAgreementScore(snap)
-    expect(score).toBeLessThan(15)
+    expect(score).toBeLessThan(10)
   })
 
   it('few comps soft-penalty', () => {
@@ -131,7 +131,7 @@ describe('SS-3 Comp agreement pillar', () => {
     }
     const { score, usableComps } = compAgreementScore(snap)
     expect(usableComps).toBe(1)
-    expect(score).toBeCloseTo(35 / 3, 1)
+    expect(score).toBeCloseTo(20 / 3, 1)
   })
 
   it('no resale prices: not present', () => {
@@ -146,14 +146,14 @@ describe('SS-3 Comp agreement pillar', () => {
 })
 
 describe('SS-4 Lease quality pillar', () => {
-  it('95-year lease → 15', () => {
-    expect(leaseQualityScore({ remaining_lease_years: 95 }).score).toBe(15)
+  it('95-year lease → 20', () => {
+    expect(leaseQualityScore({ remaining_lease_years: 95 }).score).toBe(20)
   })
-  it('60-year lease → 10', () => {
-    expect(leaseQualityScore({ remaining_lease_years: 60 }).score).toBeCloseTo(10, 1)
+  it('60-year lease → ~13.3', () => {
+    expect(leaseQualityScore({ remaining_lease_years: 60 }).score).toBeCloseTo((10 * 20) / 15, 1)
   })
-  it('40-year lease → 5', () => {
-    expect(leaseQualityScore({ remaining_lease_years: 40 }).score).toBeCloseTo(5, 1)
+  it('40-year lease → ~6.7', () => {
+    expect(leaseQualityScore({ remaining_lease_years: 40 }).score).toBeCloseTo((5 * 20) / 15, 1)
   })
   it('25-year lease → 0', () => {
     expect(leaseQualityScore({ remaining_lease_years: 25 }).score).toBe(0)

@@ -55,6 +55,22 @@ function amenityDedupeKey(lat, lng, name) {
   return `${r(lat)}_${r(lng)}_${n}`
 }
 
+/** HTML for Leaflet tooltip on amenity markers (school tier when present). */
+export function amenityTooltipHtml(item, category) {
+  const distLabel =
+    item.dist_m >= 1000
+      ? `${(item.dist_m / 1000).toFixed(1)} km`
+      : `${Math.round(item.dist_m)}m`
+  let tierLine = ''
+  if (category === 'school' && item.tier) {
+    const t = String(item.tier).toLowerCase()
+    const label =
+      t === 'high' ? 'High' : t === 'medium' ? 'Medium' : t === 'low' ? 'Lower' : String(item.tier)
+    tierLine = `<br/><span style="color:#64748b;font-size:11px">P1 popularity: ${label} demand</span>`
+  }
+  return `<span style="font-weight:600">${item.name}</span><br/><span style="color:#666">${distLabel}</span>${tierLine}`
+}
+
 /**
  * Merge nearby objects from multiple listings; dedupe POIs by rounded lat/lng + name.
  * When duplicate, keep the smaller dist_m. Sort by dist_m, cap at maxMarkers.

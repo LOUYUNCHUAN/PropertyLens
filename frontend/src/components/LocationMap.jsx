@@ -5,7 +5,8 @@ import { getTownCoords } from '../constants/towns.js'
 import {
   MAP_AMENITY_CATEGORIES as CATEGORIES,
   MAP_CATEGORY_STYLES as CATEGORY_STYLES,
-  makeAmenityIcon
+  makeAmenityIcon,
+  amenityTooltipHtml
 } from '@/lib/mapAmenities.js'
 
 export default function LocationMap({
@@ -151,18 +152,16 @@ export default function LocationMap({
           const key = `${category}-${idx}`
           const isSelected = selectedItem === key
           const icon = makeAmenityIcon(category, isSelected)
-          const distLabel = item.dist_m >= 1000
-            ? `${(item.dist_m / 1000).toFixed(1)} km`
-            : `${item.dist_m}m`
           const marker = L.marker([item.lat, item.lng], {
             icon,
             zIndexOffset: isSelected ? 1000 : 0
           })
             .addTo(map)
-            .bindTooltip(
-              `<span style="font-weight:600">${item.name}</span><br/><span style="color:#666">${distLabel}</span>`,
-              { direction: 'top', offset: [0, -12], className: 'amenity-tooltip' }
-            )
+            .bindTooltip(amenityTooltipHtml(item, category), {
+              direction: 'top',
+              offset: [0, -12],
+              className: 'amenity-tooltip'
+            })
           amenityMarkersRef.current[key] = marker
           layers.push(marker)
         }
@@ -482,6 +481,19 @@ export default function LocationMap({
                           ? `${(item.dist_m / 1000).toFixed(1)} km`
                           : `${item.dist_m}m`}
                       </div>
+                      {cat === 'school' && item.tier ? (
+                        <div
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: 'var(--ink-muted)',
+                            marginTop: '3px',
+                            textTransform: 'capitalize'
+                          }}
+                        >
+                          P1: {String(item.tier)} demand
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 )

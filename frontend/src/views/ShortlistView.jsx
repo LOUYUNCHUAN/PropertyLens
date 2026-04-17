@@ -6,7 +6,8 @@ import {
   listWishlistItems,
   getWishlistItem,
   deleteWishlistItem,
-  validateListing
+  validateListing,
+  nlSearchShortlist
 } from '../api/client.js'
 import {
   wishlistDetailToSnapshot,
@@ -23,11 +24,13 @@ import {
   snapshotsReadyForPersonas,
   personaHighlightColumn
 } from '../lib/shortlistPersonaUtils.js'
-import { Home, LayoutGrid, Map as MapIcon, Puzzle, X } from 'lucide-react'
+import { Home, LayoutGrid, Map as MapIcon, Puzzle, Search, X } from 'lucide-react'
 import SHAPChart from '../components/SHAPChart.jsx'
 import LocationMap from '../components/LocationMap.jsx'
 import CBRTable from '../components/CBRTable.jsx'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Card,
   CardContent,
@@ -398,6 +401,7 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
 }
 
 export default function ShortlistView() {
+  const CUSTOM_PERSONA_ID = 'custom'
   const { username } = useAuth()
   const u = (username && username.trim()) || localStorage.getItem('hdb_user') || 'user'
   const [rows, setRows] = useState([])
@@ -412,6 +416,14 @@ export default function ShortlistView() {
   const [sortDir, setSortDir] = useState('desc')
   const [activePersona, setActivePersona] = useState(null)
   const [mainView, setMainView] = useState('table')
+  const [nlQuery, setNlQuery] = useState('')
+  const [nlSortedIds, setNlSortedIds] = useState(null)
+  const [nlPlan, setNlPlan] = useState(null)
+  const [nlOllamaErr, setNlOllamaErr] = useState(null)
+  const [nlLoading, setNlLoading] = useState(false)
+  /** Optional overrides (meters); empty string = let server / model choose defaults. */
+  const [nlMrtMaxM, setNlMrtMaxM] = useState('')
+  const [nlHighwayMinM, setNlHighwayMinM] = useState('')
   const [mapSelectedIds, setMapSelectedIds] = useState(() => new Set())
   const mapSelectionInitRef = useRef(false)
   const [wishlistDetailsSettled, setWishlistDetailsSettled] = useState(false)
@@ -520,33 +532,16 @@ export default function ShortlistView() {
     })
   }, [wishlistDetailsSettled, rows, geocodeById])
 
-  const toggleMapRow = useCallback(
-    (id) => {
-      if (!geocodeById[id]?.found) return
-      setMapSelectedIds((prev) => {
-        const next = new Set(prev)
-        if (next.has(id)) next.delete(id)
-        else next.add(id)
-        return next
-      })
-    },
-    [geocodeById]
-  )
-
-  const selectAllMapPins = useCallback(() => {
-    setMapSelectedIds(new Set(rows.filter((r) => geocodeById[r.id]?.found).map((r) => r.id)))
-  }, [rows, geocodeById])
-
-  const clearMapPins = useCallback(() => {
-    setMapSelectedIds(new Set())
-  }, [])
-
   const noGeocodeCount = useMemo(
     () => rows.filter((r) => !geocodeById[r.id]?.found).length,
     [rows, geocodeById]
   )
 
   const displayRows = useMemo(() => {
+    if (nlSortedIds != null) {
+      const byId = new Map(rows.map((r) => [r.id, r]))
+      return nlSortedIds.map((id) => byId.get(id)).filter(Boolean)
+    }
     const baseOrder = new Map(rows.map((r, i) => [r.id, i]))
     if (activePersona && snapshotsReady) {
       return [...rows]
@@ -588,11 +583,52 @@ export default function ShortlistView() {
       }
     })
     return sorted
-  }, [rows, activePersona, snapshotsReady, snapshotsById, sortColumn, sortDir, smartScores])
+  }, [
+    rows,
+    nlSortedIds,
+    activePersona,
+    snapshotsReady,
+    snapshotsById,
+    sortColumn,
+    sortDir,
+    smartScores
+  ])
+
+  const mapRowsForView = useMemo(
+    () => (nlSortedIds != null ? displayRows : rows),
+    [nlSortedIds, displayRows, rows]
+  )
+
+  const toggleMapRow = useCallback(
+    (id) => {
+      if (!geocodeById[id]?.found) return
+      setMapSelectedIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+    },
+    [geocodeById]
+  )
+
+  const selectAllMapPins = useCallback(() => {
+    setMapSelectedIds(
+      new Set(mapRowsForView.filter((r) => geocodeById[r.id]?.found).map((r) => r.id))
+    )
+  }, [mapRowsForView, geocodeById])
+
+  const clearMapPins = useCallback(() => {
+    setMapSelectedIds(new Set())
+  }, [])
 
   const headerSubtitle = useMemo(() => {
     const n = rows.length
     const countStr = `${n} listing${n === 1 ? '' : 's'}`
+    if (nlSortedIds != null) {
+      const m = nlSortedIds.length
+      return `${countStr} · NL search: ${m} match${m === 1 ? '' : 'es'}`
+    }
     if (activePersona && snapshotsReady) {
       const sl = PERSONAS.find((p) => p.id === activePersona)?.sortLabel
       return `${countStr} · ${sl || 'Persona ranking'}`
@@ -605,12 +641,45 @@ export default function ShortlistView() {
       smartScore: 'Smart Score'
     }
     return `${countStr} · sorted by ${labels[sortColumn]} (${sortDir === 'asc' ? 'asc' : 'desc'})`
-  }, [rows.length, activePersona, snapshotsReady, sortColumn, sortDir])
+  }, [rows.length, nlSortedIds, activePersona, snapshotsReady, sortColumn, sortDir])
+
+  const handleNlSearch = useCallback(async () => {
+    const q = nlQuery.trim()
+    if (!q) return
+    setNlLoading(true)
+    setNlOllamaErr(null)
+    const mrt = String(nlMrtMaxM).trim()
+    const hwy = String(nlHighwayMinM).trim()
+    const mrtNum = mrt === '' ? NaN : Number(mrt)
+    const hwyNum = hwy === '' ? NaN : Number(hwy)
+    const opts = {}
+    if (Number.isFinite(mrtNum) && mrtNum >= 100) opts.mrt_max_dist_m = Math.round(mrtNum)
+    if (Number.isFinite(hwyNum) && hwyNum >= 0) opts.highway_min_dist_m = Math.round(hwyNum)
+    try {
+      const res = await nlSearchShortlist(u, q, 80, opts)
+      setNlSortedIds(res.sorted_ids || [])
+      setNlPlan(res.filters_applied || null)
+      setNlOllamaErr(res.ollama_error || null)
+      setActivePersona(CUSTOM_PERSONA_ID)
+    } catch {
+      setNlOllamaErr('Search failed. Is the backend running?')
+      setNlSortedIds([])
+    } finally {
+      setNlLoading(false)
+    }
+  }, [nlQuery, nlMrtMaxM, nlHighwayMinM, u, CUSTOM_PERSONA_ID])
+
+  const clearNlSearch = useCallback(() => {
+    setNlSortedIds(null)
+    setNlPlan(null)
+    setNlOllamaErr(null)
+  }, [])
 
   const onSortHeader = useCallback(
     (col) => {
+      clearNlSearch()
       // Persona overrides manual sort. Disable header clicks while a persona is active (BUG-123).
-      if (activePersona) return
+      if (activePersona && activePersona !== CUSTOM_PERSONA_ID) return
       setSortColumn((prev) => {
         if (prev === col) {
           setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -620,17 +689,22 @@ export default function ShortlistView() {
         return col
       })
     },
-    [activePersona]
+    [activePersona, clearNlSearch, CUSTOM_PERSONA_ID]
   )
 
   const handlePersonaClick = useCallback((id) => {
-    setActivePersona((prev) => (prev === id ? null : id))
+    if (id === CUSTOM_PERSONA_ID) {
+      setActivePersona((prev) => (prev === id ? null : id))
+    } else {
+      clearNlSearch()
+      setActivePersona((prev) => (prev === id ? null : id))
+    }
     const el = tableRef.current
     if (el) {
       el.classList.add('shortlist-reranking')
       window.setTimeout(() => el.classList.remove('shortlist-reranking'), 400)
     }
-  }, [])
+  }, [clearNlSearch, CUSTOM_PERSONA_ID])
 
   const personaColKey = activePersona ? personaHighlightColumn(activePersona) : null
 
@@ -640,8 +714,12 @@ export default function ShortlistView() {
     activePersona && (personaColKey === col || (col === 'gap' && personaColKey === 'vsmodel'))
 
   const thBtn = (col, align = 'left') =>
-    `${thBase} ${activePersona ? 'cursor-default' : 'cursor-pointer hover:text-foreground'} select-none ${
-      sortColumn === col && !activePersona
+    `${thBase} ${
+      activePersona && activePersona !== CUSTOM_PERSONA_ID
+        ? 'cursor-default'
+        : 'cursor-pointer hover:text-foreground'
+    } select-none ${
+      sortColumn === col && (!activePersona || activePersona === CUSTOM_PERSONA_ID)
         ? 'border-b-2 border-primary text-primary'
         : 'border-b border-transparent'
     } ${align === 'right' ? 'text-right' : ''} ${
@@ -649,6 +727,107 @@ export default function ShortlistView() {
     }`
 
   const smartScoresLoading = !wishlistDetailsSettled && rows.length > 0
+
+  const personaSortHelp = useMemo(() => {
+    if (activePersona === CUSTOM_PERSONA_ID) {
+      return {
+        label: 'Custom filter',
+        detail:
+          'Your query is turned into filters (area, MRT/highway distance) and applied to each listing’s saved map snapshot. Matching rows are sorted; adjust distance fields if you get no results.'
+      }
+    }
+    if (activePersona) {
+      const p = PERSONAS.find((x) => x.id === activePersona)
+      if (p) {
+        return {
+          label: `${p.emoji} ${p.label}`,
+          detail: p.sortLegend,
+          summary: p.sortLabel
+        }
+      }
+    }
+    return {
+      label: 'How we sort',
+      detail:
+        'Pick Family (schools), Commuter (MRT/LRT), or Investor (deal quality from Smart Score), or Custom filter for natural language. With no persona, use column headers to sort.'
+    }
+  }, [activePersona, CUSTOM_PERSONA_ID])
+
+  const customFilterPanel =
+    activePersona === CUSTOM_PERSONA_ID ? (
+      <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-3 py-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            value={nlQuery}
+            onChange={(e) => setNlQuery(e.target.value)}
+            placeholder="e.g. hougang close to mrt"
+            onKeyDown={(e) => e.key === 'Enter' && handleNlSearch()}
+            className="h-9 w-full min-w-0 sm:max-w-xl"
+            aria-label="Custom filter search"
+          />
+          <div className="flex shrink-0 gap-2">
+            <Button type="button" size="sm" onClick={handleNlSearch} disabled={nlLoading}>
+              <Search className="mr-1 h-3.5 w-3.5" aria-hidden />
+              {nlLoading ? 'Searching…' : 'Search'}
+            </Button>
+            {nlSortedIds != null ? (
+              <Button type="button" variant="outline" size="sm" onClick={clearNlSearch}>
+                Clear
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-end gap-3 text-[11px]">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="nl-mrt-max" className="text-muted-foreground">
+              Max dist. to MRT (m)
+            </Label>
+            <Input
+              id="nl-mrt-max"
+              type="number"
+              min={100}
+              max={15000}
+              step={50}
+              placeholder="default ~800"
+              value={nlMrtMaxM}
+              onChange={(e) => setNlMrtMaxM(e.target.value)}
+              className="h-8 w-[7.5rem] font-mono text-xs"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="nl-hwy-min" className="text-muted-foreground">
+              Min dist. to highway (m)
+            </Label>
+            <Input
+              id="nl-hwy-min"
+              type="number"
+              min={0}
+              max={8000}
+              step={50}
+              placeholder="optional"
+              value={nlHighwayMinM}
+              onChange={(e) => setNlHighwayMinM(e.target.value)}
+              className="h-8 w-[7.5rem] font-mono text-xs"
+            />
+          </div>
+          <p className="max-w-md pb-1 text-muted-foreground">
+            Leave blank to use the parser default (often 800&nbsp;m for “close to MRT”). Increase max
+            MRT distance if you get no rows. Listings need a saved map snapshot with MRT distances.
+          </p>
+        </div>
+        {nlOllamaErr ? (
+          <p className="text-[11px] text-amber-800 dark:text-amber-200">
+            Parsed with keyword fallback (Ollama unavailable: {nlOllamaErr.slice(0, 160)}
+            {nlOllamaErr.length > 160 ? '…' : ''})
+          </p>
+        ) : null}
+        {nlPlan != null ? (
+          <p className="break-all font-mono text-[10px] text-muted-foreground">
+            {JSON.stringify(nlPlan)}
+          </p>
+        ) : null}
+      </div>
+    ) : null
 
   return (
     <div className="space-y-4">
@@ -742,8 +921,39 @@ export default function ShortlistView() {
                         </button>
                       )
                     })}
+                    <button
+                      key={CUSTOM_PERSONA_ID}
+                      type="button"
+                      title="Custom filter + sort (natural language)"
+                      onClick={() => handlePersonaClick(CUSTOM_PERSONA_ID)}
+                      className={`flex h-12 min-w-[140px] max-w-[180px] flex-1 flex-col items-center justify-center rounded-xl border-[1.5px] text-[13px] font-medium transition-all ${
+                        activePersona === CUSTOM_PERSONA_ID
+                          ? 'border-primary/60 bg-primary/10 text-primary shadow-sm'
+                          : 'border-border bg-card text-muted-foreground hover:-translate-y-0.5 hover:shadow-sm'
+                      } ${activePersona === CUSTOM_PERSONA_ID ? 'font-bold' : ''}`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span aria-hidden>🧩</span>
+                        CUSTOM filter
+                      </span>
+                    </button>
                   </div>
-                  {activePersona && snapshotsReady && (
+                  {customFilterPanel}
+                  <div
+                    className="rounded-md border border-border/60 bg-muted/15 px-2.5 py-1.5"
+                    aria-label="How the current persona sorts the shortlist"
+                  >
+                    <p className="text-[10px] font-medium text-foreground">{personaSortHelp.label}</p>
+                    {personaSortHelp.summary ? (
+                      <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                        {personaSortHelp.summary}
+                      </p>
+                    ) : null}
+                    <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                      {personaSortHelp.detail}
+                    </p>
+                  </div>
+                  {activePersona && activePersona !== CUSTOM_PERSONA_ID && snapshotsReady && (
                     <div className="flex flex-wrap items-center gap-2 pl-0.5">
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
                         Persona: {PERSONAS.find((x) => x.id === activePersona)?.label}
@@ -762,6 +972,24 @@ export default function ShortlistView() {
                       </p>
                     </div>
                   )}
+                  {activePersona === CUSTOM_PERSONA_ID ? (
+                    <div className="flex flex-wrap items-center gap-2 pl-0.5">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
+                        Filter: CUSTOM
+                        <button
+                          type="button"
+                          className="ml-1 rounded-full p-0.5 hover:bg-primary/20"
+                          aria-label="Exit custom filter"
+                          onClick={() => setActivePersona(null)}
+                        >
+                          <X className="h-3 w-3" aria-hidden />
+                        </button>
+                      </span>
+                      <p className="text-[12px] text-muted-foreground">
+                        Uses saved map snapshots (MRT/highway distances) to filter + sort.
+                      </p>
+                    </div>
+                  ) : null}
                   {smartScoresLoading && (
                     <p className="text-[12px] text-muted-foreground" aria-live="polite">
                       <span className="mr-1.5 inline-block h-2 w-2 animate-pulse rounded-full bg-muted-foreground/60" />
@@ -782,7 +1010,7 @@ export default function ShortlistView() {
                             type="button"
                             className="w-full text-left"
                             onClick={() => onSortHeader('address')}
-                            disabled={!!activePersona}
+                            disabled={activePersona && activePersona !== CUSTOM_PERSONA_ID}
                           >
                             Address
                           </button>
@@ -791,17 +1019,35 @@ export default function ShortlistView() {
                           <div className="flex flex-col gap-1">
                             <button
                               type="button"
-                              className={`text-left ${sortColumn === 'listing' && !activePersona ? 'text-primary' : ''} ${activePersona ? 'cursor-default' : ''}`}
+                              className={`text-left ${
+                                sortColumn === 'listing' &&
+                                (!activePersona || activePersona === CUSTOM_PERSONA_ID)
+                                  ? 'text-primary'
+                                  : ''
+                              } ${
+                                activePersona && activePersona !== CUSTOM_PERSONA_ID
+                                  ? 'cursor-default'
+                                  : ''
+                              }`}
                               onClick={() => onSortHeader('listing')}
-                              disabled={!!activePersona}
+                              disabled={activePersona && activePersona !== CUSTOM_PERSONA_ID}
                             >
                               Asking
                             </button>
                             <button
                               type="button"
-                              className={`text-left ${sortColumn === 'model' && !activePersona ? 'text-primary' : ''} ${activePersona ? 'cursor-default' : ''}`}
+                              className={`text-left ${
+                                sortColumn === 'model' &&
+                                (!activePersona || activePersona === CUSTOM_PERSONA_ID)
+                                  ? 'text-primary'
+                                  : ''
+                              } ${
+                                activePersona && activePersona !== CUSTOM_PERSONA_ID
+                                  ? 'cursor-default'
+                                  : ''
+                              }`}
                               onClick={() => onSortHeader('model')}
-                              disabled={!!activePersona}
+                              disabled={activePersona && activePersona !== CUSTOM_PERSONA_ID}
                             >
                               Model est.
                             </button>
@@ -812,7 +1058,7 @@ export default function ShortlistView() {
                             type="button"
                             className="w-full text-right"
                             onClick={() => onSortHeader('gap')}
-                            disabled={!!activePersona}
+                            disabled={activePersona && activePersona !== CUSTOM_PERSONA_ID}
                           >
                             vs model
                           </button>
@@ -822,7 +1068,7 @@ export default function ShortlistView() {
                             type="button"
                             className="w-full text-left"
                             onClick={() => onSortHeader('smartScore')}
-                            disabled={!!activePersona}
+                            disabled={activePersona && activePersona !== CUSTOM_PERSONA_ID}
                           >
                             Smart Score
                           </button>
@@ -834,14 +1080,18 @@ export default function ShortlistView() {
                         const g = gapPct(row.listing_price, row.predicted_price)
                         const sm = smartScores[row.id]
                         const personaTag =
-                          activePersona && snapshotsReady
+                          activePersona &&
+                          activePersona !== CUSTOM_PERSONA_ID &&
+                          snapshotsReady
                             ? getPersonaTag(activePersona, snapshotsById[row.id])
                             : null
                         const tagLineCls = personaVariant(activePersona).tagText
                         const topAccent =
                           idx === 0 &&
                           snapshotsReady &&
-                          (activePersona || (sortColumn === 'smartScore' && sortDir === 'desc'))
+                          (nlSortedIds != null ||
+                            activePersona ||
+                            (sortColumn === 'smartScore' && sortDir === 'desc'))
                         const absGap = g != null ? Math.abs(g) : 0
                         const barFill =
                           g == null ? 0 : Math.min(100, (Math.min(absGap, 30) / 30) * 100)
@@ -928,9 +1178,9 @@ export default function ShortlistView() {
                                   <div className={tooltipPos}>
                                     <p className="text-xs leading-relaxed text-muted-foreground">{sm.reason}</p>
                                     <div className="mt-2 space-y-1">
-                                      <ScoreBar label="Price vs model" value={sm.components?.priceScore ?? 0} max={50} />
-                                      <ScoreBar label="Comparable sales" value={sm.components?.compScore ?? 0} max={35} />
-                                      <ScoreBar label="Lease quality" value={sm.components?.leaseScore ?? 0} max={15} />
+                                      <ScoreBar label="Price vs model" value={sm.components?.priceScore ?? 0} max={60} />
+                                      <ScoreBar label="Comparable sales" value={sm.components?.compScore ?? 0} max={20} />
+                                      <ScoreBar label="Lease quality" value={sm.components?.leaseScore ?? 0} max={20} />
                                     </div>
                                     {(() => {
                                       const f = sm.components?.flags || {}
@@ -987,7 +1237,11 @@ export default function ShortlistView() {
                 {!wishlistDetailsSettled ? (
                   <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading map data…</p>
                 ) : (
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                  <div className="flex flex-col gap-4">
+                    {customFilterPanel ? (
+                      <div className="border-b border-border px-4 pb-4">{customFilterPanel}</div>
+                    ) : null}
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
                     <aside className="w-full shrink-0 space-y-3 rounded-xl border border-border bg-card p-3 lg:max-h-[560px] lg:w-72 lg:overflow-y-auto">
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -1009,7 +1263,7 @@ export default function ShortlistView() {
                         Checked listings show a numbered pin and merge amenities (deduplicated, capped) into the map. Default category is All.
                       </p>
                       <ul className="space-y-2.5">
-                        {rows.map((row) => {
+                        {mapRowsForView.map((row) => {
                           const hasPin = geocodeById[row.id]?.found
                           return (
                             <li key={row.id}>
@@ -1043,7 +1297,7 @@ export default function ShortlistView() {
                     </aside>
                     <div className="min-w-0 flex-1">
                       <ShortlistMapView
-                        rows={rows}
+                        rows={mapRowsForView}
                         geocodeById={geocodeById}
                         nearbyById={nearbyById}
                         selectedListingIds={mapSelectedIds}
@@ -1056,6 +1310,7 @@ export default function ShortlistView() {
                         </p>
                       ) : null}
                     </div>
+                  </div>
                   </div>
                 )}
               </div>

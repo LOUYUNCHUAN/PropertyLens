@@ -35,7 +35,9 @@ data/processed/
 data/artifacts/
 data/feature_data/
 data/raw/
-data/amenities/
+# Amenity CSVs are small fixtures; keep large raw schooling extracts out of git
+data/amenities/sgschooling_*.csv
+data/amenities/*.bak
 data/propertylens.db
 data/propertylens.db-journal
 data/propertylens.db-wal
@@ -69,3 +71,7 @@ notebooks/**/outputs/
 # ── Notebook caches / artifacts (keep out of git) ───────────────────
 notebooks/03_ml_layer_hybrid/artifacts/
 notebooks/05_chatbot/*.pkl
+notebooks/05_chatbot/sgschooling_*.csv
+
+# Root-level node_modules (e.g. Vite cache); frontend deps live under frontend/
+/node_modules/

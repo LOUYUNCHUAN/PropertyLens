@@ -12,8 +12,15 @@ from sqlalchemy.orm import Session
 
 from backend.auth_deps import resolve_effective_username
 from backend.db import get_db
-from backend.location import compute_nearby, geocode
+from backend.location import compute_nearby, enrich_map_snapshot_json, geocode, nearest_highway_dist_m
 from backend.models import CBRRequest, PredictRequest, SHAPRequest
+from backend.shortlist_plan_apply import apply_plan, merge_nl_constraint_overrides
+from backend.shortlist_search import (
+    NLSearchRequest,
+    NLSearchResponse,
+    compile_nl_plan_with_ollama,
+    _row_features,
+)
 from backend.sql_models import WishlistListing
 
 router = APIRouter(prefix="/wishlist", tags=["wishlist"])
@@ -116,14 +123,16 @@ def create_wishlist_item(
     except Exception:
         pass
 
-    map_snap: dict[str, Any] = {"geocode": None, "nearby": None}
+    map_snap: dict[str, Any] = {"geocode": None, "nearby": None, "nearest_highway_dist_m": None}
     block = (flat.block or "").strip()
     street = (flat.street_name or "").strip()
     if block and street:
         g = geocode(f"{block} {street}")
         map_snap["geocode"] = g
         if g.get("found") and g.get("lat") is not None and g.get("lng") is not None:
-            map_snap["nearby"] = compute_nearby(float(g["lat"]), float(g["lng"]), 2000.0)
+            lat_f, lng_f = float(g["lat"]), float(g["lng"])
+            map_snap["nearby"] = compute_nearby(lat_f, lng_f, 2000.0)
+            map_snap["nearest_highway_dist_m"] = nearest_highway_dist_m(lat_f, lng_f)
 
     label = _display_label_for(flat, req.display_label)
     eff_username = resolve_effective_username(authorization, req.username)
@@ -150,6 +159,9 @@ def create_wishlist_item(
 
 def _row_to_detail_dict(row: WishlistListing) -> dict:
     d = {c.name: getattr(row, c.name) for c in row.__table__.columns}
+    ms = d.get("map_snapshot_json")
+    if ms is not None:
+        d["map_snapshot_json"] = enrich_map_snapshot_json(ms)
     return d
 
 
@@ -207,6 +219,38 @@ def get_wishlist_item(
     if not row:
         raise HTTPException(status_code=404, detail="Not found")
     return WishlistDetail.model_validate(_row_to_detail_dict(row))
+
+
+@router.post("/nl-search", response_model=NLSearchResponse)
+def nl_search_shortlist(
+    body: NLSearchRequest,
+    db: Session = Depends(get_db),
+    authorization: Annotated[Optional[str], Header()] = None,
+):
+    """Natural-language filter + sort over saved shortlist rows (Ollama → JSON plan)."""
+    eff_username = resolve_effective_username(authorization, body.username)
+    rows = (
+        db.query(WishlistListing)
+        .filter(WishlistListing.username == eff_username)
+        .order_by(WishlistListing.created_at.desc())
+        .limit(body.limit)
+        .all()
+    )
+    row_dicts = [_row_to_detail_dict(r) for r in rows]
+    feats = [_row_features(d) for d in row_dicts]
+    plan, ollama_err = compile_nl_plan_with_ollama(body.query)
+    plan = merge_nl_constraint_overrides(
+        plan,
+        mrt_max_dist_m=body.mrt_max_dist_m,
+        highway_min_dist_m=body.highway_min_dist_m,
+    )
+    sorted_ids, notes = apply_plan(feats, plan)
+    return NLSearchResponse(
+        filters_applied=plan,
+        sorted_ids=sorted_ids,
+        row_notes=notes,
+        ollama_error=ollama_err,
+    )
 
 
 @router.delete("/items/{item_id}")

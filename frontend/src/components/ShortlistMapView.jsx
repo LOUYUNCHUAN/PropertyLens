@@ -3,6 +3,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import {
   MAP_AMENITY_CATEGORIES,
+  amenityTooltipHtml,
   makeAmenityIcon,
   mapStyleCategory,
   mergeNearbyDeduped
@@ -199,14 +200,11 @@ export default function ShortlistMapView({
       const mk = L.marker([item.lat, item.lng], {
         icon: makeAmenityIcon(mapStyleCategory(cat), false)
       }).addTo(map)
-      const distLabel =
-        item.dist_m >= 1000
-          ? `${(item.dist_m / 1000).toFixed(1)} km`
-          : `${Math.round(item.dist_m)}m`
-      mk.bindTooltip(
-        `<span style="font-weight:600">${item.name}</span><br/><span style="color:#666">${distLabel}</span>`,
-        { direction: 'top', offset: [0, -12], className: 'amenity-tooltip' }
-      )
+      mk.bindTooltip(amenityTooltipHtml(item, cat), {
+        direction: 'top',
+        offset: [0, -12],
+        className: 'amenity-tooltip'
+      })
       layers.push(mk)
     })
 
