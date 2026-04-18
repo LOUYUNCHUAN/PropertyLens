@@ -143,6 +143,7 @@ Given a user query, output a JSON object with EXACTLY these keys:
 
 "filters": dict of hard constraints. Valid keys:
   flat_type (e.g. "4 ROOM"), town (e.g. "BISHAN"),
+  address_key (free-text address keywords, e.g. "1 Lorong Lew Serangoon"),
   flat_model (e.g. "Model A"), min_floor_area (number, sqm),
   max_resale_price (number, SGD), min_lease_years (number),
   max_dist_mrt_m (number, metres), require_famous_school (true/false),
@@ -166,6 +167,9 @@ Output: {"weights": {"score_famous_school": 10}, "filters": {"school_name": "NAN
 
 Query: "5-room flat in Tampines, at least 90sqm, close to MRT, budget $700k"
 Output: {"weights": {"score_mrt": 9, "score_size": 6, "score_value": 7}, "filters": {"flat_type": "5 ROOM", "town": "TAMPINES", "min_floor_area": 90, "max_resale_price": 700000}, "special_query_type": null}
+
+Query: "Show me flats around 1 Lorong Lew Serangoon"
+Output: {"weights": {"score_value": 5}, "filters": {"address_key": "1 Lorong Lew Serangoon", "town": "SERANGOON"}, "special_query_type": null}
 
 Now extract parameters for this query:
 """
@@ -426,6 +430,7 @@ class PropertyRAGSearch:
 
         # Validate and normalise
         params = self._validate_params(parsed)
+        params = self._reconcile_params_with_query(params, query)
         return params, False, raw_output
 
     def _extract_json_str(self, text: str) -> str | None:
@@ -467,6 +472,10 @@ class PropertyRAGSearch:
                     v_up = str(v).upper()
                     if v_up in VALID_TOWNS:
                         params["filters"]["town"] = v_up
+                elif k == "address_key":
+                    address_text = " ".join(str(v).split()).strip()
+                    if address_text:
+                        params["filters"]["address_key"] = address_text
                 elif k == "flat_model":
                     params["filters"]["flat_model"] = str(v)
                 elif k in ("min_floor_area", "max_resale_price",
@@ -513,6 +522,138 @@ class PropertyRAGSearch:
                 return canonical
         return None
 
+    def _query_mentions_specific_school(self, query: str) -> str | None:
+        """
+        Return a canonical school name only when the user explicitly mentions one.
+        This prevents the LLM from inventing a school for address-based queries.
+        """
+        q_upper = query.upper()
+        for canonical in FAMOUS_SCHOOL_NAMES:
+            if canonical in q_upper:
+                return canonical
+        return None
+
+    def _strip_town_from_address(self, address_text: str, town: str | None) -> str:
+        """Keep the location filter focused on the address phrase, not the broad town."""
+        if not town:
+            return address_text
+        cleaned = address_text
+        for variant in (town, town.replace("/", " ")):
+            cleaned = re.sub(rf"\b{re.escape(variant)}\b", " ", cleaned, flags=re.IGNORECASE)
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    def _extract_address_filter(self, query: str) -> str | None:
+        """
+        Pull out address-like phrases so we can match ``address_key`` as
+        keywords instead of relying on town-only filtering.
+        """
+        q_upper = re.sub(r"\s+", " ", query.upper()).strip()
+        if not re.search(r"\d", q_upper):
+            return None
+
+        street_markers = (
+            "LORONG", "LOR", "JALAN", "JLN", "ROAD", "RD", "STREET", "ST",
+            "AVENUE", "AVE", "DRIVE", "DR", "CRESCENT", "CRES", "VIEW",
+            "CENTRAL", "CTRL", "NORTH", "NTH", "TERRACE", "TER", "PLACE", "PL",
+        )
+        if not any(marker in q_upper for marker in street_markers):
+            return None
+
+        q_compact = re.sub(r"[^A-Z0-9 ]+", " ", q_upper)
+        q_compact = re.sub(r"\s+", " ", q_compact).strip()
+        tokens = q_compact.split()
+        stop_tokens = {
+            "WHAT", "ARE", "THE", "TOP", "PRIMARY", "SCHOOLS", "SCHOOL",
+            "NEAR", "WHICH", "MOST", "COMPETITIVE", "AND", "THEIR",
+            "QUALITY", "TIERS", "WITH", "UNDER", "BUDGET", "IN", "AT",
+            "LEAST", "CLOSE", "TO", "A", "AN", "OF", "SHOW", "ME",
+            "FIND", "FLATS", "FLAT", "ROOM", "PRICE",
+        }
+
+        location_words = {
+            "SERANGOON", "TAMPINES", "BEDOK", "BISHAN", "PAYOH", "HOUGANG",
+            "PUNGGOL", "SENGKANG", "WOODLANDS", "YISHUN", "ANG", "MO", "KIO",
+        }
+
+        for idx, token in enumerate(tokens):
+            if token not in street_markers:
+                continue
+
+            if idx > 0 and re.fullmatch(r"\d+[A-Z]?", tokens[idx - 1]):
+                start = idx - 1
+            elif idx + 1 < len(tokens) and re.fullmatch(r"\d+[A-Z]?", tokens[idx + 1]):
+                start = idx
+                while start > 0 and tokens[start - 1] not in stop_tokens:
+                    start -= 1
+            else:
+                continue
+
+            end = idx + 1
+            while end < len(tokens) and tokens[end] not in stop_tokens:
+                end += 1
+
+            candidate = " ".join(tokens[start:end]).strip()
+            while candidate:
+                candidate_tokens = candidate.split()
+                if candidate_tokens and candidate_tokens[-1] in location_words:
+                    break
+                if candidate_tokens and candidate_tokens[-1] in stop_tokens:
+                    candidate = " ".join(candidate_tokens[:-1]).strip()
+                    continue
+                break
+            if candidate and len(candidate.split()) >= 2:
+                return candidate
+        return None
+
+    def _reconcile_params_with_query(
+        self,
+        params: dict[str, Any],
+        query: str,
+    ) -> dict[str, Any]:
+        """
+        Align LLM-extracted params with what the user actually said.
+        For address-based school queries, prefer address_key + town and
+        reject hallucinated school_name values.
+        """
+        explicit_school = self._query_mentions_specific_school(query)
+        heuristic_params = self._heuristic_extract_params(query)
+
+        if explicit_school:
+            params["filters"]["school_name"] = explicit_school
+        else:
+            params["filters"].pop("school_name", None)
+            if params.get("special_query_type") == "near_famous_school":
+                params["special_query_type"] = None
+
+        for key in ("town", "address_key"):
+            if heuristic_params["filters"].get(key):
+                params["filters"][key] = heuristic_params["filters"][key]
+
+        if params["filters"].get("address_key"):
+            params["filters"]["address_key"] = self._strip_town_from_address(
+                params["filters"]["address_key"],
+                params["filters"].get("town"),
+            )
+
+        if not params["weights"] and heuristic_params.get("weights"):
+            params["weights"] = heuristic_params["weights"]
+
+        if (
+            not explicit_school
+            and params["filters"].get("address_key")
+            and "SCHOOL" in query.upper()
+        ):
+            params["weights"]["score_school_quality"] = max(
+                params["weights"].get("score_school_quality", 0.0),
+                8.0,
+            )
+            params["weights"]["score_school_proximity"] = max(
+                params["weights"].get("score_school_proximity", 0.0),
+                8.0,
+            )
+
+        return params
+
     def _heuristic_extract_params(self, query: str) -> dict[str, Any]:
         """
         Deterministic fallback for common property-search phrasing when
@@ -546,6 +687,13 @@ class PropertyRAGSearch:
             if any(variant in q_compact for variant in town_variants):
                 params["filters"]["town"] = town
                 break
+
+        address_filter = self._extract_address_filter(q)
+        if address_filter:
+            params["filters"]["address_key"] = self._strip_town_from_address(
+                address_filter,
+                params["filters"].get("town"),
+            )
 
         budget_match = re.search(
             r"\b(?:UNDER|BELOW|BUDGET(?: OF)?|MAX(?:IMUM)?(?: PRICE)?(?: OF)?)\s*\$?\s*([\d,.]+)\s*([KM]?)\b",

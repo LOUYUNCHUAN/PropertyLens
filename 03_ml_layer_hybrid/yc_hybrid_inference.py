@@ -43,6 +43,26 @@ def default_feature_table_csv() -> Path:
         )
     return tables[-1]
 
+
+def bundle_feature_table_csv(bundle: dict[str, Any] | None) -> Path:
+    """
+    Return the feature CSV path appropriate for a given bundle.
+
+    Prefers ``bundle["feature_csv"]`` (set at training time so the correct
+    snapshot is used for address lookup, especially for bundles trained on
+    older snapshots with different feature sets).  Falls back to the latest
+    snapshot if the saved path is absent or the file no longer exists.
+    """
+    if bundle is not None:
+        saved = bundle.get("feature_csv")
+        if saved:
+            p = Path(saved)
+            if not p.is_absolute():
+                p = _REPO_ROOT / p
+            if p.exists():
+                return p
+    return default_feature_table_csv()
+
 # Eight fields matching 07b / predict_from_user_input
 USER_INPUT_KEYS = (
     "block",
@@ -70,27 +90,50 @@ def load_feature_columns(path: Path | str | None = None) -> list[str]:
         return json.load(f)
 
 
+def _inv_transform(y: np.ndarray, log_target: bool) -> np.ndarray:
+    """Back-transform log-space predictions to price space."""
+    return np.exp(y) if log_target else y
+
+
 def _collect_global_blend_row(
     x_row: np.ndarray,
     gm: dict[str, Any],
+    log_target: bool = False,
 ) -> np.ndarray:
-    """Single row (1, n_feat) → scalar blend prediction."""
-    pr = gm["ridge"].predict(x_row)
-    px = gm["xgb"].predict(x_row)
-    pl = gm["lgb"].predict(x_row)
-    pf = gm["rf"].predict(x_row)
-    P = np.column_stack([pr, px, pl, pf])
+    """
+    Single row (1, n_feat) → scalar blend prediction (price space).
+    Supports bundles with or without 'ridge'/'meta' keys (v4+ uses XGB/LGB/RF only).
+    """
+    preds = []
+    if "ridge" in gm:
+        preds.append(_inv_transform(gm["ridge"].predict(x_row), log_target))
+    if "xgb" in gm:
+        preds.append(_inv_transform(gm["xgb"].predict(x_row), log_target))
+    if "lgb" in gm:
+        preds.append(_inv_transform(gm["lgb"].predict(x_row), log_target))
+    if "rf" in gm:
+        preds.append(_inv_transform(gm["rf"].predict(x_row), log_target))
+    P = np.column_stack(preds)
     w = np.asarray(gm["blend_weights"], dtype=float).ravel()
     return (P @ w).ravel()
 
 
-def _collect_global_stack_row(x_row: np.ndarray, gm: dict[str, Any]) -> np.ndarray:
-    pr = gm["ridge"].predict(x_row)
-    px = gm["xgb"].predict(x_row)
-    pl = gm["lgb"].predict(x_row)
-    pf = gm["rf"].predict(x_row)
-    P = np.column_stack([pr, px, pl, pf])
-    return gm["meta"].predict(P).ravel()
+def _collect_global_stack_row(
+    x_row: np.ndarray,
+    gm: dict[str, Any],
+    log_target: bool = False,
+) -> np.ndarray:
+    """Legacy stack path (uses 'meta' key if present, else falls back to blend)."""
+    if "meta" in gm:
+        preds = []
+        if "ridge" in gm:
+            preds.append(_inv_transform(gm["ridge"].predict(x_row), log_target))
+        for key in ("xgb", "lgb", "rf"):
+            if key in gm:
+                preds.append(_inv_transform(gm[key].predict(x_row), log_target))
+        P = np.column_stack(preds)
+        return gm["meta"].predict(P).ravel()
+    return _collect_global_blend_row(x_row, gm, log_target)
 
 
 def predict_price(
@@ -104,13 +147,19 @@ def predict_price(
 
     Column order must match bundle['feature_columns'].
 
-    Fallback clusters use the **global MAPE blend** (same as the training notebook),
-    not the global Ridge meta-stack, unless use_blend_for_fallback=False (stack).
+    Supports bundles trained with log_target=True (models predict log(price);
+    this function automatically applies exp() to return SGD prices).
+
+    Supports two bundle formats:
+    - Legacy (v1–v3): per-cluster bundles with 'ridge', 'xgb', 'lgb', 'rf', 'meta'
+    - v4+: per-cluster bundles with 'xgb', 'lgb', 'rf', 'blend_weights' (no meta/ridge)
     """
     if bundle is None:
         bundle = load_bundle()
     feature_columns: list[str] = bundle["feature_columns"]
     cluster_cols: list[str] = bundle["cluster_cols"]
+    log_target: bool = bool(bundle.get("log_target", False))
+
     if X.ndim != 2 or X.shape[1] != len(feature_columns):
         raise ValueError(
             f"Expected X shape (n, {len(feature_columns)}), got {getattr(X, 'shape', None)}"
@@ -133,19 +182,26 @@ def predict_price(
         cb = cluster_bundles[k] if k in cluster_bundles else cluster_bundles[str(k)]
         if cb.get("fallback"):
             if use_blend_for_fallback:
-                out[i] = _collect_global_blend_row(x_row, gm)[0]
+                out[i] = _collect_global_blend_row(x_row, gm, log_target)[0]
             else:
-                out[i] = _collect_global_stack_row(x_row, gm)[0]
-        else:
-            P = np.column_stack(
-                [
-                    cb["ridge"].predict(x_row),
-                    cb["xgb"].predict(x_row),
-                    cb["lgb"].predict(x_row),
-                    cb["rf"].predict(x_row),
-                ]
-            )
+                out[i] = _collect_global_stack_row(x_row, gm, log_target)[0]
+        elif "meta" in cb:
+            # Legacy format (v1-v3): ridge + xgb + lgb + rf → Ridge/LGB meta
+            preds = []
+            for key in ("ridge", "xgb", "lgb", "rf"):
+                if key in cb:
+                    preds.append(_inv_transform(cb[key].predict(x_row), log_target))
+            P = np.column_stack(preds)
             out[i] = float(cb["meta"].predict(P)[0])
+        else:
+            # v4+ format: xgb + lgb + rf → MAPE-optimal blend weights
+            preds = []
+            for key in ("xgb", "lgb", "rf"):
+                if key in cb:
+                    preds.append(_inv_transform(cb[key].predict(x_row), log_target))
+            P = np.column_stack(preds)
+            w = np.asarray(cb["blend_weights"], dtype=float).ravel()
+            out[i] = float(np.maximum((P @ w).item(), 1))
     return out
 
 
@@ -365,6 +421,9 @@ def predict_from_user_input(
     yc_csv: str | Path | None = None,
 ) -> dict[str, Any]:
     """Convenience: build vector + run predict_price."""
+    bundle = bundle or load_bundle()
+    if yc_csv is None:
+        yc_csv = bundle_feature_table_csv(bundle)
     built = build_yc_hybrid_vector(
         block,
         street_name,
@@ -375,9 +434,9 @@ def predict_from_user_input(
         lease_commence_date,
         sale_month,
         yc_csv=yc_csv,
+        feature_columns=bundle["feature_columns"],
     )
     X = built["vector"]
-    bundle = bundle or load_bundle()
     price = float(predict_price(X, bundle)[0])
     return {**built, "predicted_resale_price": price}
 
@@ -412,6 +471,8 @@ def predict_bulk_listings(
         raise ValueError("; ".join(missing_any))
 
     bundle = bundle or load_bundle()
+    if yc_csv is None:
+        yc_csv = bundle_feature_table_csv(bundle)
     built_list: list[dict[str, Any]] = []
     for rec in listings:
         b = build_yc_hybrid_vector(
@@ -424,6 +485,7 @@ def predict_bulk_listings(
             int(rec["lease_commence_date"]),
             rec["sale_month"],
             yc_csv=yc_csv,
+            feature_columns=bundle["feature_columns"],
         )
         built_list.append(b)
 

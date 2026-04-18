@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -241,6 +242,61 @@ def _pairwise_haversine_km(
     cos_s = np.cos(np.radians(lats2))[np.newaxis, :]
     a = np.sin(dlat / 2) ** 2 + cos_p * cos_s * np.sin(dlon / 2) ** 2
     return R * 2 * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+
+
+_ADDRESS_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    (r"\bLORONG\b", "LOR"),
+    (r"\bJALAN\b", "JLN"),
+    (r"\bAVENUE\b", "AVE"),
+    (r"\bSTREET\b", "ST"),
+    (r"\bROAD\b", "RD"),
+    (r"\bDRIVE\b", "DR"),
+    (r"\bCRESCENT\b", "CRES"),
+    (r"\bTERRACE\b", "TER"),
+    (r"\bPLACE\b", "PL"),
+    (r"\bCLOSE\b", "CL"),
+    (r"\bCENTRAL\b", "CTRL"),
+    (r"\bNORTH\b", "NTH"),
+)
+
+
+def _normalize_address_text(value: str) -> str:
+    """Normalise address text so free-text queries align with address_key abbreviations."""
+    text = re.sub(r"[^A-Z0-9 ]+", " ", str(value).upper())
+    for pattern, replacement in _ADDRESS_TERM_REPLACEMENTS:
+        text = re.sub(pattern, replacement, text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _address_terms(value: Any) -> list[str]:
+    """Split a free-text address query into matchable keyword terms."""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        raw_terms = []
+        for item in value:
+            raw_terms.extend(_normalize_address_text(item).split())
+    else:
+        raw_terms = _normalize_address_text(value).split()
+    return [term for term in raw_terms if term.isdigit() or len(term) >= 2]
+
+
+def _address_term_threshold(terms: list[str]) -> int:
+    """Allow one non-numeric keyword miss for longer address phrases."""
+    numeric_terms = [term for term in terms if term.isdigit()]
+    text_terms = [term for term in terms if not term.isdigit()]
+    if len(text_terms) <= 2:
+        return len(terms)
+    return len(numeric_terms) + max(1, len(text_terms) - 1)
+
+
+def _address_term_threshold(terms: list[str]) -> int:
+    """Allow one non-numeric keyword miss for longer address phrases."""
+    numeric_terms = [term for term in terms if term.isdigit()]
+    text_terms = [term for term in terms if not term.isdigit()]
+    if len(text_terms) <= 2:
+        return len(terms)
+    return len(numeric_terms) + max(1, len(text_terms) - 1)
 
 
 # ---------------------------------------------------------------------------
@@ -703,6 +759,7 @@ class PropertyKnowledgeBase:
             =======================  ==================================
             ``flat_type``            Exact match (e.g. ``"4 ROOM"``)
             ``town``                 Exact match (e.g. ``"BISHAN"``)
+            ``address_key``          Keyword match on ``address_key`` (e.g. ``"1 Lorong Lew Serangoon"``)
             ``flat_model``           Exact match (e.g. ``"Model A"``)
             ``min_floor_area``       ``floor_area_sqm >= value``
             ``max_resale_price``     ``resale_price <= value``
@@ -733,6 +790,18 @@ class PropertyKnowledgeBase:
             df = df[_str_filter("flat_type", filters["flat_type"])]
         if "town" in filters:
             df = df[_str_filter("town", filters["town"])]
+        if "address_key" in filters:
+            address_terms = _address_terms(filters["address_key"])
+            if address_terms:
+                normalized_address = df["address_key"].fillna("").map(_normalize_address_text)
+                term_hits = pd.DataFrame(
+                    {term: normalized_address.str.contains(re.escape(term), regex=True) for term in address_terms}
+                )
+                mask = term_hits.sum(axis=1) >= _address_term_threshold(address_terms)
+                for term in address_terms:
+                    if term.isdigit():
+                        mask &= term_hits[term]
+                df = df[mask]
         if "flat_model" in filters:
             df = df[_str_filter("flat_model", filters["flat_model"])]
         if "min_floor_area" in filters:
@@ -1007,6 +1076,14 @@ _CYPHER_SEARCH = """\
 MATCH (p:Property)
 WHERE ($flat_type    IS NULL OR p.flat_type    IN $flat_type)
   AND ($town         IS NULL OR p.town         IN $town)
+  AND (
+    $address_key_terms IS NULL OR
+    size([term IN $address_key_terms WHERE toUpper(coalesce(p.address_key, "")) CONTAINS term]) >= $min_address_key_term_matches
+  )
+  AND (
+    $address_key_numeric_terms IS NULL OR
+    ALL(term IN $address_key_numeric_terms WHERE toUpper(coalesce(p.address_key, "")) CONTAINS term)
+  )
   AND ($flat_model   IS NULL OR p.flat_model   IN $flat_model)
   AND ($min_floor_area   IS NULL OR p.floor_area_sqm      >= $min_floor_area)
   AND ($max_resale_price IS NULL OR p.resale_price         <= $max_resale_price)
@@ -1118,6 +1195,9 @@ class Neo4jPropertySearch:
                 return [str(v).upper() for v in val]
             return [str(val).upper()]
 
+        address_key_terms = _address_terms(filters.get("address_key"))
+        address_key_numeric_terms = [term for term in address_key_terms if term.isdigit()]
+
         params = {
             **weight_params,
             "total_weight": total_w,
@@ -1125,6 +1205,9 @@ class Neo4jPropertySearch:
             # Filters — None means no filter in Cypher; lists used with IN operator
             "flat_type": _to_list_or_none(filters.get("flat_type")),
             "town": _to_list_or_none(filters.get("town")),
+            "address_key_terms": address_key_terms or None,
+            "address_key_numeric_terms": address_key_numeric_terms or None,
+            "min_address_key_term_matches": _address_term_threshold(address_key_terms),
             "flat_model": _to_list_or_none(filters.get("flat_model")),
             "min_floor_area": filters.get("min_floor_area"),
             "max_resale_price": filters.get("max_resale_price"),
