@@ -288,11 +288,26 @@ class PropertyRAGSearch:
             database=neo4j_database or os.getenv("NEO4J_DATABASE"),
         )
 
+        # Local search fallback
+        self._local_kb = None  # Lazy-loaded when needed
+
         # LLM — reuse passed instance or load TinyLlama
         if llm is not None:
             self._llm = llm
         else:
             self._load_llm()
+
+    def _get_local_kb(self):
+        """Lazy-load the local knowledge base for fallback searches."""
+        if self._local_kb is None:
+            try:
+                from yc_property_search import PropertyKnowledgeBase
+                self._local_kb = PropertyKnowledgeBase()
+                print("Local knowledge base loaded for fallback search.")
+            except Exception as exc:
+                warnings.warn(f"Failed to load local knowledge base: {exc}")
+                self._local_kb = None
+        return self._local_kb
 
     # ------------------------------------------------------------------
     # LLM loading
@@ -815,6 +830,18 @@ class PropertyRAGSearch:
                 )
             except Exception as exc:
                 warnings.warn(f"Neo4j search failed in Stage 2: {exc}")
+                # Try local fallback
+                local_kb = self._get_local_kb()
+                if local_kb is not None:
+                    try:
+                        return local_kb.search(
+                            weights=params["weights"],
+                            filters={**base_filters, **extra_filters},
+                            top_k=top_k * 3,
+                        )
+                    except Exception as local_exc:
+                        warnings.warn(f"Local search fallback also failed: {local_exc}")
+                return pd.DataFrame()
                 return pd.DataFrame()
 
         # No location filters — plain weighted search
@@ -877,6 +904,18 @@ class PropertyRAGSearch:
                 )
             except Exception as exc:
                 warnings.warn(f"Fallback famous-school search failed: {exc}")
+                # Try local fallback
+                local_kb = self._get_local_kb()
+                if local_kb is not None:
+                    try:
+                        return local_kb.search(
+                            weights=fallback_weights,
+                            filters={k: v for k, v in params["filters"].items()
+                                      if k != "school_name"},
+                            top_k=top_k,
+                        )
+                    except Exception as local_exc:
+                        warnings.warn(f"Local famous-school search fallback also failed: {local_exc}")
                 return pd.DataFrame()
 
         try:
@@ -886,10 +925,35 @@ class PropertyRAGSearch:
                 top_k=top_k,
             )
             if not records:
+                # Try local fallback for graph query
+                local_kb = self._get_local_kb()
+                if local_kb is not None:
+                    try:
+                        # Local search for properties near the famous school
+                        # Use a filter for properties within reasonable distance
+                        return local_kb.search(
+                            weights={"score_famous_school": 10.0},
+                            filters={"require_famous_school": True},
+                            top_k=top_k,
+                        ).head(top_k)
+                    except Exception as local_exc:
+                        warnings.warn(f"Local graph query fallback failed: {local_exc}")
                 return pd.DataFrame()
             return pd.DataFrame(records)
         except Exception as exc:
             warnings.warn(f"graph_query near famous school failed: {exc}")
+            # Try local fallback
+            local_kb = self._get_local_kb()
+            if local_kb is not None:
+                try:
+                    # Local search for properties near the famous school
+                    return local_kb.search(
+                        weights={"score_famous_school": 10.0},
+                        filters={"require_famous_school": True},
+                        top_k=top_k,
+                    ).head(top_k)
+                except Exception as local_exc:
+                    warnings.warn(f"Local graph query fallback also failed: {local_exc}")
             return pd.DataFrame()
 
     # ------------------------------------------------------------------
