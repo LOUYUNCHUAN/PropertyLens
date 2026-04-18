@@ -66,6 +66,28 @@ The Vite dev server proxies `/api` to the backend (see `frontend/vite.config.js`
 
 Optional: **`frontend/.env.example`** → **`.env`** if you need a fixed API origin (e.g. production build).
 
+### 5. (Optional) Install the Chrome browser extension
+
+The extension reads PropertyGuru HDB listings and opens the Buyer view with the listing's details pre-filled.
+
+1. Make sure the backend (`http://localhost:8000`) and frontend (`http://localhost:5173`) are both running.
+2. Open **Chrome** (or any Chromium-based browser — Edge, Brave, Arc) and navigate to:
+   ```
+   chrome://extensions
+   ```
+3. Toggle **Developer mode** on (top-right corner).
+4. Click **Load unpacked** and select the `extension/` folder inside this repo:
+   ```
+   /path/to/PropertyLens/extension
+   ```
+5. The **PropertyLens — HDB listing insight** extension should now appear in your extension list. Pin it to the toolbar if you want quick access.
+6. Visit an HDB listing on PropertyGuru (e.g. `https://www.propertyguru.com.sg/listing/hdb-for-sale/...`). The content script injects a fair-value button that deep-links into the Buyer view with `asking_price` and address params.
+
+**Troubleshooting:**
+- If the extension shows errors, click **Service worker** / **Errors** on its card in `chrome://extensions` to see logs.
+- After editing any file in `extension/`, click the **reload** (↻) icon on the extension card to pick up changes.
+- The extension talks to `http://localhost:8000` — make sure the backend is running and CORS is allowed (default config already permits this).
+
 ## Project layout
 
 ```text
