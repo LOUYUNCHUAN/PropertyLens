@@ -24,6 +24,7 @@ REPO_ROOT = Path(__file__).parent.parent
 AMENITIES_DIR = REPO_ROOT / "data" / "amenities"
 
 _amenity_frames: dict[str, pd.DataFrame] = {}
+_highway_polyline_segments_cache: list[dict[str, Any]] | None = None
 
 
 def _load_amenities():
@@ -69,7 +70,6 @@ def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 def nearest_highway_dist_m(lat: float, lng: float) -> float | None:
     """
     Minimum distance (m) from a point to any sampled highway/major-road point.
-    Highways are not included in compute_nearby() POI lists (too dense for map pins).
     """
     _load_amenities()
     df = _amenity_frames.get("highway")
@@ -83,6 +83,70 @@ def nearest_highway_dist_m(lat: float, lng: float) -> float | None:
     if best == float("inf"):
         return None
     return round(best)
+
+
+def _highway_polyline_segments_from_df(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """
+    Contiguous polylines in CSV file order. Split when road name changes or gap between
+    consecutive samples exceeds max_gap_m (different corridor / branch).
+    """
+    if df is None or len(df) == 0:
+        return []
+    out: list[dict[str, Any]] = []
+    current: list[tuple[float, float]] = []
+    current_name: str | None = None
+    current_type = "expressway"
+    prev_lat: float | None = None
+    prev_lng: float | None = None
+    max_gap_m = 500.0
+
+    for _, row in df.iterrows():
+        lat, lng = float(row["lat"]), float(row["lng"])
+        name = str(row["name"]).strip()
+        typ = str(row["type"]).strip() if pd.notna(row.get("type")) else "expressway"
+        if not current:
+            current = [(lat, lng)]
+            current_name = name
+            current_type = typ
+            prev_lat, prev_lng = lat, lng
+            continue
+        assert prev_lat is not None and prev_lng is not None
+        gap = _haversine_m(prev_lat, prev_lng, lat, lng)
+        if name != current_name or gap > max_gap_m:
+            if len(current) >= 2 and current_name:
+                out.append(
+                    {
+                        "name": current_name,
+                        "type": current_type,
+                        "latlngs": [[a, b] for a, b in current],
+                    }
+                )
+            current = [(lat, lng)]
+            current_name = name
+            current_type = typ
+        else:
+            current.append((lat, lng))
+        prev_lat, prev_lng = lat, lng
+
+    if len(current) >= 2 and current_name:
+        out.append(
+            {
+                "name": current_name,
+                "type": current_type,
+                "latlngs": [[a, b] for a, b in current],
+            }
+        )
+    return out
+
+
+def _get_highway_polyline_segments() -> list[dict[str, Any]]:
+    global _highway_polyline_segments_cache
+    if _highway_polyline_segments_cache is not None:
+        return _highway_polyline_segments_cache
+    _load_amenities()
+    df = _amenity_frames.get("highway")
+    _highway_polyline_segments_cache = _highway_polyline_segments_from_df(df) if df is not None else []
+    return _highway_polyline_segments_cache
 
 
 @router.get("/geocode")
@@ -119,13 +183,12 @@ def geocode(q: str = Query(..., min_length=2, description="Block + street name, 
     return result
 
 
-def compute_nearby(lat: float, lng: float, radius_m: float = 2000.0) -> dict[str, list]:
+def compute_nearby(lat: float, lng: float, radius_m: float = 2000.0) -> dict[str, Any]:
     """Core nearby logic — used by /api/nearby and wishlist snapshot."""
     _load_amenities()
 
-    result: dict[str, list] = {}
+    result: dict[str, Any] = {}
     for category, df in _amenity_frames.items():
-        # Highway samples are dense; use nearest_highway_dist_m instead of map pins.
         if category == "highway":
             continue
         items = []
@@ -157,6 +220,22 @@ def compute_nearby(lat: float, lng: float, radius_m: float = 2000.0) -> dict[str
         items.sort(key=lambda x: x["dist_m"])
         result[category] = items
 
+    # Highways: contiguous polylines (not per-point markers). Include segment if any vertex in range.
+    result["highway"] = []
+    hwy_segments: list[dict[str, Any]] = []
+    for seg in _get_highway_polyline_segments():
+        latlngs = seg.get("latlngs") or []
+        if len(latlngs) < 2:
+            continue
+        best = min(
+            _haversine_m(lat, lng, float(p[0]), float(p[1])) for p in latlngs
+        )
+        if best <= radius_m:
+            row = {**seg, "dist_m": round(best)}
+            hwy_segments.append(row)
+    hwy_segments.sort(key=lambda x: x["dist_m"])
+    result["highway_segments"] = hwy_segments[:40]
+
     return result
 
 
@@ -185,10 +264,8 @@ def _school_csv_row_for_poi(df: pd.DataFrame, lat: float, lng: float, name: str)
 
 def enrich_map_snapshot_json(map_snap: dict[str, Any] | None) -> dict[str, Any] | None:
     """
-    Merge tier / mean_oversubscription from the current school CSV into saved nearby.school POIs.
-
-    Wishlist rows store frozen map_snapshot_json; re-read enrichment keeps shortlist maps aligned
-    with data/amenities/school_popularity_combined.csv without DB migrations.
+    Refresh derived nearby layers on read: highway samples from current CSV, school tier from
+    school_popularity_combined.csv. Wishlist rows store frozen map_snapshot_json without migrations.
     """
     if not map_snap or not isinstance(map_snap, dict):
         return map_snap
@@ -196,6 +273,19 @@ def enrich_map_snapshot_json(map_snap: dict[str, Any] | None) -> dict[str, Any] 
     nearby = out.get("nearby")
     if not isinstance(nearby, dict):
         return out
+
+    geo = out.get("geocode") or {}
+    if geo.get("found") and geo.get("lat") is not None and geo.get("lng") is not None:
+        try:
+            lat_f = float(geo["lat"])
+            lng_f = float(geo["lng"])
+        except (TypeError, ValueError):
+            lat_f = lng_f = None
+        if lat_f is not None and lng_f is not None:
+            full = compute_nearby(lat_f, lng_f, 2000.0)
+            nearby["highway"] = full.get("highway") or []
+            nearby["highway_segments"] = full.get("highway_segments") or []
+
     schools = nearby.get("school")
     if not isinstance(schools, list) or not schools:
         return out

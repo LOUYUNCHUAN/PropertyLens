@@ -3,9 +3,12 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import {
   MAP_AMENITY_CATEGORIES,
+  MAP_CATEGORY_STYLES,
   amenityTooltipHtml,
+  highwaySegmentTooltipHtml,
   makeAmenityIcon,
   mapStyleCategory,
+  mergeHighwaySegmentsDeduped,
   mergeNearbyDeduped
 } from '@/lib/mapAmenities.js'
 
@@ -94,15 +97,23 @@ export default function ShortlistMapView({
     return mergeNearbyDeduped(nearbyById, ids, 400)
   }, [nearbyById, selectedListingIds, geocodedOrder])
 
+  const mergedHighwaySegments = useMemo(() => {
+    const ids = geocodedOrder
+      .map((r) => r.id)
+      .filter((id) => selectedListingIds.has(id))
+    return mergeHighwaySegmentsDeduped(nearbyById, ids)
+  }, [nearbyById, selectedListingIds, geocodedOrder])
+
   const categoryCounts = useMemo(() => {
-    const counts = { all: 0, mrt: 0, school: 0, hawker: 0, mall: 0 }
+    const counts = { all: 0, mrt: 0, school: 0, hawker: 0, mall: 0, highway: 0 }
     for (const { cat } of mergedAmenities) {
-      counts.all += 1
       if (cat === 'mrt' || cat === 'lrt') counts.mrt += 1
       else if (counts[cat] != null) counts[cat] += 1
     }
+    counts.highway = mergedHighwaySegments.length
+    counts.all = mergedAmenities.length + mergedHighwaySegments.length
     return counts
-  }, [mergedAmenities])
+  }, [mergedAmenities, mergedHighwaySegments])
 
   useEffect(() => {
     if (mapInstance.current) return
@@ -194,6 +205,28 @@ export default function ShortlistMapView({
       layers.push(m)
     }
 
+    if (
+      mergedHighwaySegments.length > 0 &&
+      (activeCategory === 'all' || activeCategory === 'highway')
+    ) {
+      mergedHighwaySegments.forEach((seg) => {
+        const latlngs = (seg.latlngs || []).map(([la, ln]) => [la, ln])
+        if (latlngs.length < 2) return
+        const line = L.polyline(latlngs, {
+          color: MAP_CATEGORY_STYLES.highway.border,
+          weight: 4,
+          opacity: 0.88,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map)
+        line.bindTooltip(highwaySegmentTooltipHtml(seg), {
+          sticky: true,
+          className: 'amenity-tooltip'
+        })
+        layers.push(line)
+      })
+    }
+
     mergedAmenities.forEach((entry) => {
       const { cat, item } = entry
       if (!amenityMatchesCategory(cat, activeCategory)) return
@@ -220,6 +253,7 @@ export default function ShortlistMapView({
     visibleRows,
     geocodeById,
     mergedAmenities,
+    mergedHighwaySegments,
     activeCategory,
     listingNumber,
     gapPct,

@@ -11,7 +11,8 @@ export function parseChatSseComplete(raw) {
   const lines = String(raw).split(/\r?\n/)
   for (const line of lines) {
     if (!line.startsWith('data:')) continue
-    const payload = line.slice(5).trimStart()
+    const rest = line.slice(5)
+    const payload = rest.startsWith(' ') ? rest.slice(1) : rest
     if (!payload || payload === '[DONE]') continue
     if (payload.startsWith('[SOURCES]')) {
       const match = payload.match(/\[SOURCES\](.*)\[\/SOURCES\]/)
@@ -44,7 +45,8 @@ export function createChatSseStreamParser(onPayload) {
       const line = buffer.slice(0, nl).replace(/\r$/, '')
       buffer = buffer.slice(nl + 1)
       if (!line.startsWith('data:')) continue
-      const payload = line.slice(5).trimStart()
+      const rest = line.slice(5)
+      const payload = rest.startsWith(' ') ? rest.slice(1) : rest
       if (payload) onPayload(payload)
     }
   }
@@ -54,7 +56,8 @@ export function createChatSseStreamParser(onPayload) {
       const line = buffer.replace(/\r$/, '')
       buffer = ''
       if (line.startsWith('data:')) {
-        const payload = line.slice(5).trimStart()
+        const rest = line.slice(5)
+        const payload = rest.startsWith(' ') ? rest.slice(1) : rest
         if (payload) onPayload(payload)
       }
     }

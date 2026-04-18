@@ -40,6 +40,7 @@ import {
   RecentSalesTable,
   WhatIfSimulator
 } from '@/components/seller/sellerResultsWidgets.jsx'
+import PhotoRefineCard from '@/components/PhotoRefineCard.jsx'
 
 const fmt = (n) => `$${Math.round(n).toLocaleString()}`
 
@@ -69,7 +70,9 @@ export default function SellerResultsStepFlow({
   whatIfShap,
   whatIfLoading,
   handleWhatIfChange,
-  onResetWhatIf
+  onResetWhatIf,
+  photoAdjustment,
+  onPhotoAdjustmentChange
 }) {
   const stepRef0 = useRef(null)
   const stepRef1 = useRef(null)
@@ -330,6 +333,11 @@ export default function SellerResultsStepFlow({
           </div>
         </CardContent>
       </Card>
+
+      <PhotoRefineCard
+        basePrice={predicted}
+        onResult={onPhotoAdjustmentChange}
+      />
 
       <div className="relative mt-2 space-y-0">
         <BuyerStepProgressBar

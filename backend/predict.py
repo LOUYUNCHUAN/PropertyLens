@@ -19,9 +19,19 @@ from backend.models import (
     LIMEResponse,
     LIMEFeature,
 )
-from backend.main import state
-
 router = APIRouter()
+
+
+class _AppStateProxy:
+    """Lazy access to backend.main.state to avoid circular imports during router setup."""
+
+    def __getattr__(self, name: str):
+        from backend.main import state as _s
+
+        return getattr(_s, name)
+
+
+state = _AppStateProxy()
 
 def _public_price(raw: float) -> float:
     """Same rounding as POST /api/predict — nearest S$100."""
@@ -201,11 +211,11 @@ def predict(req: PredictRequest):
 
     cbr_check = None
     try:
-        from backend.cbr import cbr_similar
+        from backend.cbr import run_cbr_similar
         from backend.models import CBRRequest
 
         cbr_req = CBRRequest(flat=req, k=5)
-        cbr_resp = cbr_similar(cbr_req)
+        cbr_resp = run_cbr_similar(cbr_req)
         comparables_raw = [{"resale_price": c.resale_price} for c in cbr_resp.comparables]
         cbr_median = compute_cbr_median(comparables_raw)
         sample_size = len(cbr_resp.comparables)
@@ -262,8 +272,7 @@ def predict(req: PredictRequest):
     )
 
 
-@router.post("/explain/shap", response_model=SHAPResponse)
-def explain_shap(req: SHAPRequest):
+def run_explain_shap(req: SHAPRequest) -> SHAPResponse:
     from fastapi import HTTPException
 
     from backend.shap_local import compute_cluster_xgb_shap
@@ -316,6 +325,11 @@ def explain_shap(req: SHAPRequest):
         fallback_reason=None,
         shap_model_prediction=round(float(xgb_pred), 2),
     )
+
+
+@router.post("/explain/shap", response_model=SHAPResponse)
+def explain_shap(req: SHAPRequest):
+    return run_explain_shap(req)
 
 
 @router.post("/explain/lime", response_model=LIMEResponse)

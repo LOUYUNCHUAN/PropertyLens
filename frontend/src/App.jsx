@@ -12,6 +12,7 @@ import DebugView from './views/DebugView.jsx'
 import CompareView from './views/CompareView.jsx'
 import DiscoverView from './views/DiscoverView.jsx'
 import AskAIView from './views/AskAIView.jsx'
+import ChatVectorDbView from './views/ChatVectorDbView.jsx'
 import ShortlistView from './views/ShortlistView.jsx'
 import AccountView from './views/AccountView.jsx'
 
@@ -107,6 +108,14 @@ export default function App() {
             element={
               <ProtectedLayout>
                 <AskAIView />
+              </ProtectedLayout>
+            }
+          />
+          <Route
+            path="/insights/chat-vdb"
+            element={
+              <ProtectedLayout>
+                <ChatVectorDbView />
               </ProtectedLayout>
             }
           />

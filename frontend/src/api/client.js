@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { parseChatSseComplete } from '../lib/chatSse.js'
+import { parseChatSseComplete, createChatSseStreamParser } from '../lib/chatSse.js'
 
 /** In dev, prefer same-origin + Vite proxy so /api hits the backend reliably. */
 function apiBaseURL() {
@@ -73,6 +73,17 @@ export const getCBR = (data, k = 5) =>
 
 export const getCounterfactual = (payload) =>
   API.post('/api/counterfactual', payload).then((r) => r.data)
+
+/** Multipart upload: interior photo + base price → condition-adjusted price. */
+export const adjustPriceWithPhoto = (file, basePrice) => {
+  const fd = new FormData()
+  fd.append('image', file)
+  fd.append('base_price', String(basePrice))
+  return API.post('/api/predict/condition-photo', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000
+  }).then((r) => r.data)
+}
 
 export const getModelMeta = () =>
   API.get('/api/model-meta').then((r) => r.data)
@@ -179,6 +190,157 @@ export const nlSearchShortlist = (username, query, limit = 80, opts = {}) =>
 export const sendChat = async (payload) => {
   const res = await API.post('/api/chat', payload, { responseType: 'text' })
   return parseChatSseComplete(res.data || '')
+}
+
+/**
+ * Pinecone hybrid RAG + tools. Uses fetch (not axios) so the default 30s axios limit
+ * cannot apply, and dev-server proxy timeouts are less likely to bite.
+ * First request can take several minutes (model load + Pinecone + Ollama).
+ */
+export const sendRagChat = async (payload) => {
+  const base = apiBaseURL()
+  const url = base
+    ? `${String(base).replace(/\/$/, '')}/api/rag-chat`
+    : '/api/rag-chat'
+  const tok =
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('hdb_token')
+      : null
+  const headers = { 'Content-Type': 'application/json' }
+  if (tok) headers.Authorization = `Bearer ${tok}`
+  const ctrl = new AbortController()
+  const tid = setTimeout(() => ctrl.abort(), 600000)
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: ctrl.signal
+    })
+    const raw = await res.text()
+    if (!res.ok) {
+      let msg = raw
+      try {
+        const j = JSON.parse(raw)
+        msg =
+          (typeof j.detail === 'string' && j.detail) ||
+          (Array.isArray(j.detail) && j.detail.map((d) => d.msg || d).join('; ')) ||
+          j.message ||
+          raw
+      } catch {
+        /* use raw */
+      }
+      throw new Error(msg || `HTTP ${res.status}`)
+    }
+    const parsed = parseChatSseComplete(raw)
+    if (!String(parsed.answer || '').trim()) {
+      return {
+        ...parsed,
+        answer:
+          '(No reply text received. Ensure Ollama is running, PINECONE_API_KEY is set, and wait for the first request — loading models can take a few minutes.)'
+      }
+    }
+    return parsed
+  } finally {
+    clearTimeout(tid)
+  }
+}
+
+/**
+ * Streaming variant of sendRagChat. Reads the SSE body incrementally and
+ * fires callbacks as events arrive:
+ *   onStatus('retrieving' | 'no_retrieval' | 'generating')
+ *   onSources(sourcesArray)   — emitted right after retrieval
+ *   onToken(piece)            — each Ollama text chunk
+ *   onDone()                  — stream ended cleanly
+ *   onError(Error)            — network / HTTP / abort
+ *
+ * Returns the AbortController so the caller can cancel mid-stream.
+ */
+export const streamRagChat = (payload, callbacks = {}) => {
+  const { onStatus, onSources, onToken, onDone, onError, onIntent, onLog } = callbacks
+  const base = apiBaseURL()
+  const url = base
+    ? `${String(base).replace(/\/$/, '')}/api/rag-chat`
+    : '/api/rag-chat'
+  const tok =
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('hdb_token')
+      : null
+  const headers = { 'Content-Type': 'application/json' }
+  if (tok) headers.Authorization = `Bearer ${tok}`
+  const ctrl = new AbortController()
+  const tid = setTimeout(() => ctrl.abort(), 600000)
+
+  const parser = createChatSseStreamParser((event) => {
+    if (event === '[DONE]') return
+    const intentMatch = /^\[INTENT\](.*)\[\/INTENT\]$/.exec(event)
+    if (intentMatch) {
+      onIntent?.(intentMatch[1])
+      return
+    }
+    const logMatch = /^\[LOG\](.*?)\|(.*)\[\/LOG\]$/.exec(event)
+    if (logMatch) {
+      onLog?.({ level: logMatch[1], text: logMatch[2] })
+      return
+    }
+    const statusMatch = /^\[STATUS\](.*)\[\/STATUS\]$/.exec(event)
+    if (statusMatch) {
+      onStatus?.(statusMatch[1])
+      return
+    }
+    const srcMatch = /^\[SOURCES\](.*)\[\/SOURCES\]$/.exec(event)
+    if (srcMatch) {
+      try {
+        const arr = JSON.parse(srcMatch[1])
+        if (Array.isArray(arr)) onSources?.(arr)
+      } catch {
+        /* ignore malformed sources frame */
+      }
+      return
+    }
+    onToken?.(event)
+  })
+
+  ;(async () => {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: ctrl.signal
+      })
+      if (!res.ok) {
+        const raw = await res.text()
+        let msg = raw
+        try {
+          const j = JSON.parse(raw)
+          msg =
+            (typeof j.detail === 'string' && j.detail) ||
+            j.message ||
+            raw
+        } catch {
+          /* use raw */
+        }
+        throw new Error(msg || `HTTP ${res.status}`)
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) break
+        parser.push(decoder.decode(value, { stream: true }))
+      }
+      parser.flush()
+      onDone?.()
+    } catch (e) {
+      if (e?.name !== 'AbortError') onError?.(e)
+    } finally {
+      clearTimeout(tid)
+    }
+  })()
+
+  return ctrl
 }
 
 /** Example body for /api/predict — PropertyGuru demo listing (1 Lorong Lew Lian; see BuyerView defaults). */

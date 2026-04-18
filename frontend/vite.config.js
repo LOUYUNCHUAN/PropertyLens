@@ -15,7 +15,15 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
-        changeOrigin: true
+        changeOrigin: true,
+        // Vector RAG first request can load encoders + hit Pinecone + Ollama for minutes.
+        timeout: 600000,
+        proxyTimeout: 600000,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.setTimeout(600000)
+          })
+        }
       }
     }
   }

@@ -14,6 +14,7 @@ const PATH_TITLES = {
   '/compare': 'Compare',
   '/analysis': 'Analytics',
   '/ask-ai': 'Ask AI',
+  '/insights/chat-vdb': 'Ask AI (beta) · VectorDB',
   '/debug': 'Debug',
   '/account': 'Account'
 }

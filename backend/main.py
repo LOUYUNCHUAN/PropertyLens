@@ -56,6 +56,9 @@ class AppState:
     model_meta = None  # hybrid_cluster_meta.json loaded at startup
     cached_town_summary = None  # computed once at startup
     cached_trends = None  # computed once at startup
+    condition_model_meta = None  # sidecar JSON (training_date, val_mae, ...)
+    # NOTE: the condition model itself lives in backend.photo_condition._MODEL_STATUS
+    # and is loaded lazily on the first /api/predict/condition-photo request.
 
 
 state = AppState()
@@ -126,6 +129,27 @@ async def lifespan(app: FastAPI):
     print("✅ Hybrid cluster artefacts loaded")
     print(f"   Features: {len(state.feature_cols)}")
     print(f"   CBR cases: {len(state.cbr_df):,}")
+
+    # Photo condition model: loaded lazily on first /api/predict/condition-photo
+    # request so startup isn't blocked by the torchvision import + state_dict load.
+    # Meta is cheap and read eagerly for the endpoint response payload.
+    try:
+        from backend.photo_condition import resolve_condition_meta
+
+        state.condition_model_meta = resolve_condition_meta()
+        _cm_meta = state.condition_model_meta or {}
+        if _cm_meta:
+            print(
+                f"✅ Photo condition meta read "
+                f"(date={_cm_meta.get('training_date')}, val_mae={_cm_meta.get('val_mae')}); "
+                f"model will load on first request"
+            )
+        else:
+            print("ℹ️ No photo condition meta sidecar found; model still loads lazily if weights exist")
+    except Exception as e:
+        state.condition_model_meta = None
+        print(f"   (no condition model meta sidecar: {e})")
+
     try:
         from backend.db import SessionLocal, init_db
         from backend.auth_routes import ensure_demo_user
@@ -139,6 +163,17 @@ async def lifespan(app: FastAPI):
         print("✅ User history DB initialized (SQLite / DATABASE_URL)")
     except Exception as e:
         print(f"⚠️ User history DB init failed: {e}")
+
+    try:
+        from backend.rag_v51.warmup import should_warm_rag_v51_on_startup, warm_rag_v51_encoders
+
+        if should_warm_rag_v51_on_startup():
+            warm_rag_v51_encoders()
+    except Exception as e:
+        import traceback
+        print(f"⚠️ RAG v5.1 warmup failed (first /api/rag-chat may load encoders slowly): {e}")
+        print(traceback.format_exc())
+
     yield
     print("Shutting down")
 
@@ -188,6 +223,8 @@ from backend.history import router as history_router  # noqa: E402
 from backend.wishlist import router as wishlist_router  # noqa: E402
 from backend.auth_routes import router as auth_router  # noqa: E402
 from backend.constraints import validate_listing, ValidateRequest  # noqa: E402
+from backend.rag_chat import router as rag_chat_router  # noqa: E402
+from backend.photo_condition import router as photo_condition_router  # noqa: E402
 
 app.include_router(predict_router, prefix="/api")
 app.include_router(cbr_router, prefix="/api")
@@ -198,11 +235,21 @@ app.include_router(location_router, prefix="/api")
 app.include_router(history_router, prefix="/api")
 app.include_router(wishlist_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
+app.include_router(rag_chat_router, prefix="/api")
+app.include_router(photo_condition_router, prefix="/api")
 
 
 @app.post("/api/validate-listing")
 def validate_listing_endpoint(req: ValidateRequest):
     return validate_listing(req)
+
+
+@app.get("/api/rag-chat/diag")
+def rag_chat_diag():
+    """Probe every rag-chat dependency (Ollama / Pinecone / BM25 / encoders) without triggering downloads."""
+    from backend.rag_v51.diag import run_diagnostics
+
+    return run_diagnostics()
 
 
 # ── Policy KB endpoint ────────────────────────────────────────────

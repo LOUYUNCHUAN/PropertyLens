@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 import google.generativeai as genai
 from neo4j import GraphDatabase
 
+from backend.hdb_towns import MATURE_ESTATES, TOWNS
 from backend.models import ChatRequest
 from backend.main import state
 
@@ -99,53 +100,7 @@ except Exception as e:  # pragma: no cover - connectivity setup
 
 
 # ── Intent extraction ─────────────────────────────────────────────
-TOWNS = [
-  'ANG MO KIO',
-  'BEDOK',
-  'BISHAN',
-  'BUKIT MERAH',
-  'BUKIT TIMAH',
-  'CENTRAL AREA',
-  'CLEMENTI',
-  'GEYLANG',
-  'HOUGANG',
-  'JURONG EAST',
-  'JURONG WEST',
-  'KALLANG',
-  'KALLANG/WHAMPOA',
-  'MARINE PARADE',
-  'PASIR RIS',
-  'PUNGGOL',
-  'QUEENSTOWN',
-  'SEMBAWANG',
-  'SENGKANG',
-  'SERANGOON',
-  'TAMPINES',
-  'TOA PAYOH',
-  'WOODLANDS',
-  'YISHUN',
-  'BUKIT BATOK',
-  'BUKIT PANJANG',
-  'CHOA CHU KANG',
-]
-
-MATURE_ESTATES = {
-  'ANG MO KIO',
-  'BEDOK',
-  'BISHAN',
-  'BUKIT MERAH',
-  'BUKIT TIMAH',
-  'CENTRAL AREA',
-  'CLEMENTI',
-  'GEYLANG',
-  'KALLANG/WHAMPOA',
-  'MARINE PARADE',
-  'PASIR RIS',
-  'QUEENSTOWN',
-  'SERANGOON',
-  'TAMPINES',
-  'TOA PAYOH',
-}
+# TOWNS + MATURE_ESTATES imported from backend.hdb_towns (single source of truth).
 
 
 def extract_intent(message: str) -> dict:

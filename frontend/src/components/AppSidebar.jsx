@@ -29,7 +29,8 @@ const navigation = [
     hasChildren: true,
     children: [
       { name: 'Analytics', href: '/analysis' },
-      { name: 'Ask AI', href: '/ask-ai' }
+      { name: 'Ask AI', href: '/ask-ai' },
+      { name: 'Ask AI (beta) · VectorDB', href: '/insights/chat-vdb' }
     ]
   },
   {
@@ -43,7 +44,7 @@ export default function AppSidebar() {
   const pathname = useLocation().pathname
 
   const workspacePaths = ['/buyer', '/seller', '/shortlist']
-  const insightsPaths = ['/analysis', '/ask-ai']
+  const insightsPaths = ['/analysis', '/ask-ai', '/insights/chat-vdb']
 
   const [workspaceOpen, setWorkspaceOpen] = useState(() =>
     workspacePaths.some((p) => pathname === p)

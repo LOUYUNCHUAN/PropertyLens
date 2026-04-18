@@ -154,6 +154,7 @@ export default function SellerView() {
   const [formCollapsed, setFormCollapsed] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [suggestedListingMultiplier, setSuggestedListingMultiplier] = useState(1.03)
+  const [photoAdjustment, setPhotoAdjustment] = useState(null)
 
   const [whatIfStorey, setWhatIfStorey] = useState(8)
   const [whatIfLease, setWhatIfLease] = useState(67)
@@ -195,6 +196,7 @@ export default function SellerView() {
     setLoading(true)
     setError(null)
     setResults(null)
+    setPhotoAdjustment(null)
 
     const block = String(form.block || '').trim()
     const street = String(form.streetName || '').trim()
@@ -650,6 +652,8 @@ export default function SellerView() {
           whatIfLoading={whatIfLoading}
           handleWhatIfChange={handleWhatIfChange}
           onResetWhatIf={resetWhatIf}
+          photoAdjustment={photoAdjustment}
+          onPhotoAdjustmentChange={setPhotoAdjustment}
         />
       )}
     </div>

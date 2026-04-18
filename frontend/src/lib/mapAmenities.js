@@ -5,7 +5,8 @@ export const MAP_AMENITY_CATEGORIES = [
   { key: 'mrt', label: 'MRT/LRT', icon: '🚇' },
   { key: 'school', label: 'Schools', icon: '🎓' },
   { key: 'hawker', label: 'Hawker', icon: '🍜' },
-  { key: 'mall', label: 'Shopping', icon: '🛍️' }
+  { key: 'mall', label: 'Shopping', icon: '🛍️' },
+  { key: 'highway', label: 'Major roads', icon: '🛣️' }
 ]
 
 export const MAP_CATEGORY_STYLES = {
@@ -13,7 +14,8 @@ export const MAP_CATEGORY_STYLES = {
   lrt: { bg: '#e8f2fa', border: '#1a5f9a', icon: '🚇' },
   school: { bg: '#fef3e2', border: '#c8791a', icon: '🎓' },
   hawker: { bg: '#faf8f4', border: '#9a9590', icon: '🍜' },
-  mall: { bg: '#f3e8f9', border: '#7c3aed', icon: '🛍️' }
+  mall: { bg: '#f3e8f9', border: '#7c3aed', icon: '🛍️' },
+  highway: { bg: '#e8e8ec', border: '#52525b', icon: '🛣️' }
 }
 
 /** Visual category for amenity layer (LRT uses MRT styling). */
@@ -68,19 +70,55 @@ export function amenityTooltipHtml(item, category) {
       t === 'high' ? 'High' : t === 'medium' ? 'Medium' : t === 'low' ? 'Lower' : String(item.tier)
     tierLine = `<br/><span style="color:#64748b;font-size:11px">P1 popularity: ${label} demand</span>`
   }
-  return `<span style="font-weight:600">${item.name}</span><br/><span style="color:#666">${distLabel}</span>${tierLine}`
+  let extraLine = ''
+  if (category === 'highway' && item.type) {
+    extraLine = `<br/><span style="color:#64748b;font-size:11px">${String(item.type)}</span>`
+  }
+  return `<span style="font-weight:600">${item.name}</span><br/><span style="color:#666">${distLabel}</span>${tierLine}${extraLine}`
 }
 
 /**
  * Merge nearby objects from multiple listings; dedupe POIs by rounded lat/lng + name.
  * When duplicate, keep the smaller dist_m. Sort by dist_m, cap at maxMarkers.
  */
+/**
+ * Dedupe highway polylines across selected listings (same corridor = same first vertex key).
+ */
+export function mergeHighwaySegmentsDeduped(nearbyById, selectedIds) {
+  const seen = new Set()
+  const out = []
+  for (const id of selectedIds) {
+    const nearby = nearbyById[id]
+    const segs = nearby?.highway_segments
+    if (!Array.isArray(segs)) continue
+    for (const seg of segs) {
+      const ll = seg.latlngs
+      if (!Array.isArray(ll) || ll.length < 2) continue
+      const key = `${seg.name}|${Math.round(ll[0][0] * 1e5)}|${Math.round(ll[0][1] * 1e5)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(seg)
+    }
+  }
+  return out.sort((a, b) => (a.dist_m || 0) - (b.dist_m || 0))
+}
+
+export function highwaySegmentTooltipHtml(seg) {
+  const d = Number(seg.dist_m) || 0
+  const distLabel = d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)}m`
+  const typ = seg.type
+    ? `<br/><span style="color:#64748b;font-size:11px">${String(seg.type)}</span>`
+    : ''
+  return `<span style="font-weight:600">${seg.name}</span><br/><span style="color:#666">${distLabel}</span>${typ}`
+}
+
 export function mergeNearbyDeduped(nearbyById, selectedIds, maxMarkers = 400) {
   const best = new Map()
   for (const id of selectedIds) {
     const nearby = nearbyById[id]
     if (!nearby || typeof nearby !== 'object') continue
     for (const [cat, items] of Object.entries(nearby)) {
+      if (cat === 'highway_segments') continue
       if (!Array.isArray(items)) continue
       for (const item of items) {
         const lat = Number(item.lat)

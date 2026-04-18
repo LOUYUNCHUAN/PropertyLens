@@ -209,6 +209,30 @@ class ChatRequest(BaseSchema):
     history: List[Dict] = []  # [{role: "user"|"assistant", content: "..."}]
 
 
+class RagChatRequest(BaseSchema):
+    """Vector DB RAG chat (Pinecone + Ollama). Optional tools: predict, CBR, SHAP, shortlist."""
+
+    message: str
+    history: List[Dict] = []
+    username: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        description="Demo username; combined with Bearer for shortlist resolution.",
+    )
+    flat_overrides: Optional[PredictRequest] = Field(
+        default=None,
+        description="Structured flat features for predict/CBR/SHAP when not using shortlist_item_id.",
+    )
+    shortlist_item_id: Optional[int] = Field(
+        default=None,
+        description="Load PredictRequest from this wishlist row (must belong to user).",
+    )
+    llm: Optional[str] = Field(
+        default=None,
+        description="LLM provider: 'ollama' (default) or 'gemini'. Falls back to Ollama when gemini is unconfigured.",
+    )
+
+
 class ChatResponse(BaseSchema):
     answer: str
     sources: List[str] = []

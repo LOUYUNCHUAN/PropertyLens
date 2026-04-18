@@ -13,7 +13,6 @@ import pandas as pd
 from sklearn.neighbors import BallTree
 
 from backend.models import CBRRequest, CBRResponse, CBRCase
-from backend.main import state
 
 router = APIRouter()
 
@@ -92,8 +91,8 @@ def compute_cbr_median(comparables: list) -> float | None:
     return prices[mid]
 
 
-@router.post("/cbr/similar", response_model=CBRResponse)
-def cbr_similar(req: CBRRequest):
+def run_cbr_similar(req: CBRRequest) -> CBRResponse:
+    from backend.main import state
     from backend.predict import flat_to_feature_vector
 
     # Build full feature vector and aligned subset used for CBR
@@ -207,3 +206,8 @@ def cbr_similar(req: CBRRequest):
     }
 
     return CBRResponse(comparables=cases, query_features=query_features)
+
+
+@router.post("/cbr/similar", response_model=CBRResponse)
+def cbr_similar(req: CBRRequest):
+    return run_cbr_similar(req)

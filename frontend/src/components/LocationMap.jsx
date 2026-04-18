@@ -6,7 +6,8 @@ import {
   MAP_AMENITY_CATEGORIES as CATEGORIES,
   MAP_CATEGORY_STYLES as CATEGORY_STYLES,
   makeAmenityIcon,
-  amenityTooltipHtml
+  amenityTooltipHtml,
+  highwaySegmentTooltipHtml
 } from '@/lib/mapAmenities.js'
 
 export default function LocationMap({
@@ -145,8 +146,62 @@ export default function LocationMap({
     layers.push(flatMarker)
 
     if (nearby) {
+      const segs = nearby.highway_segments
+      if (
+        Array.isArray(segs) &&
+        segs.length > 0 &&
+        (activeCategory === 'all' || activeCategory === 'highway')
+      ) {
+        segs.forEach((seg, idx) => {
+          const latlngs = (seg.latlngs || []).map(([la, ln]) => [la, ln])
+          if (latlngs.length < 2) return
+          const key = `highway-seg-${idx}`
+          const isSelected = selectedItem === key
+          const line = L.polyline(latlngs, {
+            color: isSelected ? '#4a7c6f' : CATEGORY_STYLES.highway.border,
+            weight: isSelected ? 6 : 4,
+            opacity: 0.88,
+            lineCap: 'round',
+            lineJoin: 'round'
+          }).addTo(map)
+          line.bindTooltip(highwaySegmentTooltipHtml(seg), {
+            sticky: true,
+            className: 'amenity-tooltip'
+          })
+          line.on('click', () => setSelectedItem(key))
+          amenityMarkersRef.current[key] = line
+          layers.push(line)
+        })
+      } else if (
+        Array.isArray(nearby.highway) &&
+        nearby.highway.length > 0 &&
+        (activeCategory === 'all' || activeCategory === 'highway')
+      ) {
+        for (let idx = 0; idx < nearby.highway.length; idx++) {
+          const item = nearby.highway[idx]
+          const key = `highway-${idx}`
+          const isSelected = selectedItem === key
+          const icon = makeAmenityIcon('highway', isSelected)
+          const marker = L.marker([item.lat, item.lng], {
+            icon,
+            zIndexOffset: isSelected ? 1000 : 0
+          })
+            .addTo(map)
+            .bindTooltip(amenityTooltipHtml(item, 'highway'), {
+              direction: 'top',
+              offset: [0, -12],
+              className: 'amenity-tooltip'
+            })
+          marker.on('click', () => setSelectedItem(key))
+          amenityMarkersRef.current[key] = marker
+          layers.push(marker)
+        }
+      }
+
       for (const [category, items] of Object.entries(nearby)) {
+        if (category === 'highway' || category === 'highway_segments') continue
         if (activeCategory !== 'all' && activeCategory !== category) continue
+        if (!Array.isArray(items)) continue
         for (let idx = 0; idx < items.length; idx++) {
           const item = items[idx]
           const key = `${category}-${idx}`
@@ -200,15 +255,52 @@ export default function LocationMap({
       ]
     : []
 
-  const totalNearby = nearby
-    ? Object.values(nearby).reduce((s, arr) => s + arr.length, 0)
-    : 0
+  const totalNearby = useMemo(() => {
+    if (!nearby) return 0
+    const segN = Array.isArray(nearby.highway_segments) ? nearby.highway_segments.length : 0
+    const legacyH = segN > 0 ? 0 : Array.isArray(nearby.highway) ? nearby.highway.length : 0
+    let n = segN + legacyH
+    for (const [k, arr] of Object.entries(nearby)) {
+      if (k === 'highway' || k === 'highway_segments') continue
+      n += Array.isArray(arr) ? arr.length : 0
+    }
+    return n
+  }, [nearby])
 
   const gridItems = useMemo(() => {
     if (!nearby) return []
     const out = []
+    const segs = nearby.highway_segments
+    if (
+      Array.isArray(segs) &&
+      segs.length > 0 &&
+      (activeCategory === 'all' || activeCategory === 'highway')
+    ) {
+      segs.forEach((seg, idx) => {
+        out.push({
+          cat: 'highway',
+          item: {
+            name: seg.name,
+            dist_m: seg.dist_m,
+            type: seg.type,
+            latlngs: seg.latlngs
+          },
+          key: `highway-seg-${idx}`
+        })
+      })
+    } else if (
+      Array.isArray(nearby.highway) &&
+      nearby.highway.length > 0 &&
+      (activeCategory === 'all' || activeCategory === 'highway')
+    ) {
+      nearby.highway.forEach((item, idx) => {
+        out.push({ cat: 'highway', item, key: `highway-${idx}` })
+      })
+    }
     for (const [cat, items] of Object.entries(nearby)) {
+      if (cat === 'highway' || cat === 'highway_segments') continue
       if (activeCategory !== 'all' && activeCategory !== cat) continue
+      if (!Array.isArray(items)) continue
       items.forEach((item, idx) => {
         out.push({ cat, item, key: `${cat}-${idx}` })
       })
@@ -235,7 +327,9 @@ export default function LocationMap({
           const count =
             cat.key === 'all'
               ? totalNearby
-              : (nearby?.[cat.key] || []).length
+              : cat.key === 'highway'
+                ? (nearby?.highway_segments?.length ?? nearby?.highway?.length ?? 0)
+                : (nearby?.[cat.key] || []).length
           const isActive = activeCategory === cat.key
           return (
             <button
@@ -492,6 +586,19 @@ export default function LocationMap({
                           }}
                         >
                           P1: {String(item.tier)} demand
+                        </div>
+                      ) : null}
+                      {cat === 'highway' && item.type ? (
+                        <div
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: 'var(--ink-muted)',
+                            marginTop: '3px',
+                            textTransform: 'capitalize'
+                          }}
+                        >
+                          {String(item.type)}
                         </div>
                       ) : null}
                     </div>
