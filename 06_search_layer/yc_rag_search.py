@@ -629,10 +629,22 @@ class PropertyRAGSearch:
             if heuristic_params["filters"].get(key):
                 params["filters"][key] = heuristic_params["filters"][key]
 
+        # Drop LLM-hallucinated filters that the heuristic extractor did not also detect.
+        # town/address_key/school_name are already handled above; all other filter keys
+        # (flat_type, min_floor_area, max_resale_price, etc.) must be confirmed by the
+        # deterministic heuristic or they are discarded.
+        heuristic_filter_keys = set(heuristic_params["filters"].keys())
+        for key in list(params["filters"].keys()):
+            if key not in ("town", "address_key", "school_name") and key not in heuristic_filter_keys:
+                del params["filters"][key]
+
         if params["filters"].get("address_key"):
             params["filters"]["address_key"] = self._strip_town_from_address(
                 params["filters"]["address_key"],
                 params["filters"].get("town"),
+            )
+            params["filters"]["address_key"] = re.sub(
+                r"^\d+[A-Z]?\s+", "* ", params["filters"]["address_key"].strip().upper()
             )
 
         if not params["weights"] and heuristic_params.get("weights"):
@@ -779,24 +791,68 @@ class PropertyRAGSearch:
 
         Routes graph-traversal queries to ``graph_query()`` and standard
         queries to ``Neo4jPropertySearch.search()``.
+
+        When both ``town`` and ``address_key`` filters are present, they are
+        applied with OR semantics: properties matching either condition are
+        returned, and those matching both rank first (match_tier=2 > 1).
         """
         sqt = params.get("special_query_type")
 
         if sqt == "near_famous_school":
             return self._search_near_famous_school(params, top_k)
 
-        # Standard weighted search
-        try:
-            results = self._neo4j.search(
-                weights=params["weights"],
-                filters={k: v for k, v in params["filters"].items()
-                         if k != "school_name"},
-                top_k=top_k,
-            )
-            return results
-        except Exception as exc:
-            warnings.warn(f"Neo4j search failed in Stage 2: {exc}")
+        # Separate location filters for OR logic; drop school_name (graph-traversal only)
+        base_filters = {k: v for k, v in params["filters"].items() if k != "school_name"}
+        town = base_filters.pop("town", None)
+        address_key = base_filters.pop("address_key", None)
+
+        def _run(extra_filters: dict) -> pd.DataFrame:
+            try:
+                return self._neo4j.search(
+                    weights=params["weights"],
+                    filters={**base_filters, **extra_filters},
+                    top_k=top_k * 3,
+                )
+            except Exception as exc:
+                warnings.warn(f"Neo4j search failed in Stage 2: {exc}")
+                return pd.DataFrame()
+
+        # No location filters — plain weighted search
+        if not town and not address_key:
+            return _run({}).head(top_k).reset_index(drop=True)
+
+        # Only one location filter — no OR needed
+        if town and not address_key:
+            return _run({"town": town}).head(top_k).reset_index(drop=True)
+        if address_key and not town:
+            return _run({"address_key": address_key}).head(top_k).reset_index(drop=True)
+
+        # Both filters present: OR semantics with tier-based ranking
+        addr_results = _run({"address_key": address_key})
+        town_results = _run({"town": town})
+
+        if addr_results.empty and town_results.empty:
             return pd.DataFrame()
+        if addr_results.empty:
+            return town_results.head(top_k).reset_index(drop=True)
+        if town_results.empty:
+            return addr_results.head(top_k).reset_index(drop=True)
+
+        both_keys = set(addr_results["address_key"]) & set(town_results["address_key"])
+        merged = (
+            pd.concat([addr_results, town_results])
+            .drop_duplicates(subset="address_key", keep="first")
+        )
+        merged["_match_tier"] = merged["address_key"].apply(
+            lambda k: 2 if k in both_keys else 1
+        )
+        return (
+            merged
+            .sort_values(["_match_tier", "composite_score"], ascending=[False, False])
+            .drop(columns=["_match_tier"])
+            .head(top_k)
+            .reset_index(drop=True)
+        )
 
     def _search_near_famous_school(
         self,

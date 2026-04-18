@@ -798,9 +798,6 @@ class PropertyKnowledgeBase:
                     {term: normalized_address.str.contains(re.escape(term), regex=True) for term in address_terms}
                 )
                 mask = term_hits.sum(axis=1) >= _address_term_threshold(address_terms)
-                for term in address_terms:
-                    if term.isdigit():
-                        mask &= term_hits[term]
                 df = df[mask]
         if "flat_model" in filters:
             df = df[_str_filter("flat_model", filters["flat_model"])]
@@ -1196,7 +1193,6 @@ class Neo4jPropertySearch:
             return [str(val).upper()]
 
         address_key_terms = _address_terms(filters.get("address_key"))
-        address_key_numeric_terms = [term for term in address_key_terms if term.isdigit()]
 
         params = {
             **weight_params,
@@ -1206,7 +1202,7 @@ class Neo4jPropertySearch:
             "flat_type": _to_list_or_none(filters.get("flat_type")),
             "town": _to_list_or_none(filters.get("town")),
             "address_key_terms": address_key_terms or None,
-            "address_key_numeric_terms": address_key_numeric_terms or None,
+            "address_key_numeric_terms": None,
             "min_address_key_term_matches": _address_term_threshold(address_key_terms),
             "flat_model": _to_list_or_none(filters.get("flat_model")),
             "min_floor_area": filters.get("min_floor_area"),

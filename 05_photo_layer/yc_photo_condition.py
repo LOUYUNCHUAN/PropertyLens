@@ -95,9 +95,13 @@ def adjustment_pct_for_score(score: float) -> float:
 
 # ── Model loading ──────────────────────────────────────────────────────────────
 
-def load_condition_model(model_path: str | Path | None = None):
+# Global model cache to avoid reloading on every call
+_CONDITION_MODEL_CACHE = {}
+
+
+def load_condition_model(model_path: str | Path | None = None, force_reload: bool = False, timeout_seconds: int = 30):
     """
-    Load the fine-tuned EfficientNet-B0 condition scorer.
+    Load the fine-tuned EfficientNet-B0 condition scorer (cached after first load).
 
     Parameters
     ----------
@@ -105,13 +109,16 @@ def load_condition_model(model_path: str | Path | None = None):
                  ``condition_model_*.pth`` is auto-discovered in this order:
                  1. ``<repo_root>/hf_data/05_photo_layer/artifacts/``  (downloaded cache)
                  2. ``05_photo_layer/artifacts/``                       (local training output)
+    force_reload : if True, bypass cache and reload from disk.
+    timeout_seconds : maximum time to wait for model loading (default 30s).
 
     Returns
     -------
-    torch.nn.Module in eval mode.
+    torch.nn.Module in eval mode. Cached on subsequent calls (same model_path).
     """
     import torch
     import torchvision.models as tv_models
+    import time
 
     if model_path is None:
         # Search hf_data mirror first (conventional downloaded path), then local artifacts
@@ -131,23 +138,61 @@ def load_condition_model(model_path: str | Path | None = None):
                 + "\nRun 02_photo_model_train.ipynb or 00_download_data_from_HF.ipynb first."
             )
         model_path = candidates[-1]
-        print(f"Loading condition model from: {model_path}")
 
     model_path = Path(model_path)
     if not model_path.exists():
         raise FileNotFoundError(f"Model weights not found: {model_path}")
 
-    model = tv_models.efficientnet_b0(weights=None)
-    # Replace classifier with regression head (matches training architecture)
-    in_features = model.classifier[1].in_features
-    model.classifier = torch.nn.Sequential(
-        torch.nn.Dropout(p=0.3, inplace=True),
-        torch.nn.Linear(in_features, 1),
-    )
-    state = torch.load(model_path, map_location="cpu", weights_only=True)
-    model.load_state_dict(state)
-    model.eval()
-    return model
+    # Check cache first
+    cache_key = str(model_path.resolve())
+    if cache_key in _CONDITION_MODEL_CACHE and not force_reload:
+        return _CONDITION_MODEL_CACHE[cache_key]
+
+    print(f"Loading condition model from: {model_path} (timeout: {timeout_seconds}s) ...")
+    start_time = time.time()
+
+    try:
+        # Try faster loading first with weights_only=True
+        try:
+            model = tv_models.efficientnet_b0(weights=None)
+            # Replace classifier with regression head (matches training architecture)
+            in_features = model.classifier[1].in_features
+            model.classifier = torch.nn.Sequential(
+                torch.nn.Dropout(p=0.3, inplace=True),
+                torch.nn.Linear(in_features, 1),
+            )
+            
+            # Try loading with weights_only=True first (faster)
+            state = torch.load(model_path, map_location="cpu", weights_only=True)
+            model.load_state_dict(state)
+            model.eval()
+            
+        except Exception:
+            # Fallback to weights_only=False if the above fails
+            print("  Retrying with weights_only=False...")
+            model = tv_models.efficientnet_b0(weights=None)
+            in_features = model.classifier[1].in_features
+            model.classifier = torch.nn.Sequential(
+                torch.nn.Dropout(p=0.3, inplace=True),
+                torch.nn.Linear(in_features, 1),
+            )
+            state = torch.load(model_path, map_location="cpu", weights_only=False)
+            model.load_state_dict(state)
+            model.eval()
+        
+        load_time = time.time() - start_time
+        print(f"  ✓ Model loaded in {load_time:.1f}s")
+        
+        # Cache the model
+        _CONDITION_MODEL_CACHE[cache_key] = model
+        return model
+        
+    except Exception as e:
+        load_time = time.time() - start_time
+        if load_time >= timeout_seconds:
+            raise TimeoutError(f"Model loading timed out after {load_time:.1f} seconds")
+        else:
+            raise e
 
 
 # ── Image pre-processing ───────────────────────────────────────────────────────
