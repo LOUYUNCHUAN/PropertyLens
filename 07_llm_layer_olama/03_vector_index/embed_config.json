@@ -1,0 +1,4 @@
+{
+  "embed_dim": 768,
+  "method": "ollama_gemma3"
+}
