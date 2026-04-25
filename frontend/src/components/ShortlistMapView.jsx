@@ -78,6 +78,9 @@ export default function ShortlistMapView({
   const mapInstance = useRef(null)
   const layersRef = useRef([])
   const [activeCategory, setActiveCategory] = useState('all')
+  // Toggle to hide highway polylines independently of category filter.
+  // Defaults ON; users can disable when the lines distract from listing pins.
+  const [showHighways, setShowHighways] = useState(true)
 
   const geocodedOrder = useMemo(
     () => rows.filter((r) => geocodeById[r.id]?.found),
@@ -242,25 +245,28 @@ export default function ShortlistMapView({
     }
 
     if (
+      showHighways &&
       mergedHighwaySegments.length > 0 &&
       (activeCategory === 'all' || activeCategory === 'highway')
     ) {
       mergedHighwaySegments.forEach((seg) => {
         const latlngs = (seg.latlngs || []).map(([la, ln]) => [la, ln])
         if (latlngs.length < 2) return
-        // Two-stroke highway: bright halo + colored core for visibility.
+        // Two-stroke highway: white halo + neutral grey core. Grey reads as
+        // a road on the basemap without competing with the slot-coloured
+        // listing pins. Toggle via the "Show highways" switch.
         const halo = L.polyline(latlngs, {
           pane: 'highwayPane',
           color: '#ffffff',
-          weight: 12,
-          opacity: 0.95,
+          weight: 10,
+          opacity: 0.85,
           lineCap: 'round',
           lineJoin: 'round'
         }).addTo(map)
         const line = L.polyline(latlngs, {
           pane: 'highwayPane',
-          color: MAP_CATEGORY_STYLES.highway.border,
-          weight: 7,
+          color: '#6b7280',
+          weight: 5,
           opacity: 0.95,
           lineCap: 'round',
           lineJoin: 'round'
@@ -311,6 +317,7 @@ export default function ShortlistMapView({
     geocodeById,
     mergedAmenities,
     mergedHighwaySegments,
+    showHighways,
     activeCategory,
     listingNumber,
     pinAppearanceById,
@@ -363,6 +370,20 @@ export default function ShortlistMapView({
             </button>
           )
         })}
+
+        <label
+          className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/60"
+          title="Toggle major-road overlays"
+        >
+          <input
+            type="checkbox"
+            checked={showHighways}
+            onChange={(e) => setShowHighways(e.target.checked)}
+            className="h-3.5 w-3.5 cursor-pointer accent-primary"
+          />
+          <span aria-hidden>🛣️</span>
+          Show highways
+        </label>
       </div>
 
       <div

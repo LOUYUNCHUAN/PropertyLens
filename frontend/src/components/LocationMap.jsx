@@ -170,21 +170,22 @@ export default function LocationMap({
           if (latlngs.length < 2) return
           const key = `highway-seg-${idx}`
           const isSelected = selectedItem === key
-          // Two-stroke highway: soft halo + neutral core so it reads as a
-          // road, not an alert. Selected state keeps the teal emphasis.
+          // Two-stroke highway: white halo for legibility, red core matching
+          // the "Major roads" legend chip (#dc2626) so it actually reads on
+          // the basemap. Grey was invisible against OSM tiles.
           const halo = L.polyline(latlngs, {
             pane: 'highwayPane',
             color: '#ffffff',
-            weight: isSelected ? 8 : 6,
-            opacity: 0.6,
+            weight: isSelected ? 10 : 8,
+            opacity: 0.85,
             lineCap: 'round',
             lineJoin: 'round'
           }).addTo(map)
           const line = L.polyline(latlngs, {
             pane: 'highwayPane',
-            color: isSelected ? '#4a7c6f' : '#9ca3af',
-            weight: isSelected ? 5 : 3,
-            opacity: 0.9,
+            color: isSelected ? '#7f1d1d' : '#dc2626',
+            weight: isSelected ? 6 : 4,
+            opacity: 1,
             lineCap: 'round',
             lineJoin: 'round'
           }).addTo(map)

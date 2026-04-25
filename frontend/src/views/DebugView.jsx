@@ -85,7 +85,7 @@ export default function DebugView() {
   const schools = nodes.filter((n) => n.type === 'FamousSchool')
 
   return (
-    <div style={{ display: 'grid', gap: 24 }}>
+    <div style={{ display: 'grid', gap: 24, minWidth: 0, width: '100%' }}>
       <section className="card">
         <div className="section-label">API / model health</div>
         <div style={{ fontSize: 13, lineHeight: 1.6 }}>
@@ -273,14 +273,17 @@ export default function DebugView() {
         </div>
       </section>
 
-      <section className="card">
+      <section className="card" style={{ minWidth: 0 }}>
         <div className="section-label">Live API log (last 40)</div>
         <div
           style={{
             maxHeight: 360,
             overflowY: 'auto',
+            overflowX: 'hidden',
             fontSize: 11,
-            fontFamily: 'JetBrains Mono, monospace'
+            fontFamily: 'JetBrains Mono, monospace',
+            wordBreak: 'break-all',
+            overflowWrap: 'anywhere',
           }}
         >
           {[...apiLogs]

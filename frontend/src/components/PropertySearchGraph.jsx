@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph2D from 'react-force-graph-2d'
 
 const TYPE_COLORS = {
@@ -20,6 +20,24 @@ function nodeSuffix(n) {
 }
 
 export default function PropertySearchGraph({ nodes = [], links = [], error }) {
+  // ForceGraph2D defaults to window.innerWidth when no `width` prop is set,
+  // which overflows the parent card. Measure the wrapper and pass an explicit
+  // width so the canvas always fits the card on any screen size.
+  const wrapperRef = useRef(null)
+  const [boxWidth, setBoxWidth] = useState(0)
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setBoxWidth(Math.floor(entry.contentRect.width))
+      }
+    })
+    ro.observe(el)
+    setBoxWidth(Math.floor(el.getBoundingClientRect().width))
+    return () => ro.disconnect()
+  }, [])
+
   const graphData = useMemo(() => {
     if (!nodes.length) return { nodes: [], links: [] }
     return {
@@ -85,9 +103,22 @@ export default function PropertySearchGraph({ nodes = [], links = [], error }) {
   }
 
   return (
-    <div style={{ height: 460, borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb', background: '#fff' }}>
+    <div
+      ref={wrapperRef}
+      style={{
+        height: 460,
+        width: '100%',
+        maxWidth: '100%',
+        borderRadius: 8,
+        overflow: 'hidden',
+        border: '1px solid #e5e7eb',
+        background: '#fff',
+      }}
+    >
       <ForceGraph2D
         graphData={graphData}
+        width={boxWidth || undefined}
+        height={460}
         nodeId="id"
         nodeLabel={(n) => `${n.label} (${n.type}) · ${nodeSuffix(n)}`}
         nodeVal={(n) => Math.max(1, Math.sqrt(nodeCount(n)))}

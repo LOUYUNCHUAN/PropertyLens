@@ -1,13 +1,3 @@
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ReferenceLine,
-  ResponsiveContainer,
-  Cell
-} from 'recharts'
 import { humanizeAprioriWarning, humanizePriceBand } from '@/lib/sellerSignals.js'
 import { cn } from '@/lib/utils'
 import { WhatIfSlider } from '@/components/whatif/WhatIfSlider.jsx'
@@ -611,8 +601,6 @@ function SliderRow({
 export function WhatIfSimulator({
   basePrice,
   whatIfPrice,
-  whatIfShap,
-  baseShap,
   whatIfStorey,
   whatIfLease,
   whatIfArea,
@@ -626,16 +614,6 @@ export function WhatIfSimulator({
   const currentPrice = whatIfPrice || basePrice
   const delta = Math.round(currentPrice - basePrice)
   const deltaPositive = delta >= 0
-
-  const WHATSIF_FEATURES = ['storey_mid', 'remaining_lease_years', 'floor_area_sqm']
-  const shapDeltaData = WHATSIF_FEATURES.map((feat) => {
-    const baseVal = baseShap?.find((s) => s.feature === feat)?.shap_value || 0
-    const currentVal = whatIfShap?.find((s) => s.feature === feat)?.shap_value || 0
-    return {
-      feature: WHATSIF_FEATURE_LABELS[feat] || feat,
-      delta: Math.round(currentVal - baseVal)
-    }
-  }).filter((d) => d.delta !== 0)
 
   const formatSGD = (v) =>
     new Intl.NumberFormat('en-SG', {
@@ -771,48 +749,6 @@ export function WhatIfSimulator({
         </p>
       </div>
 
-      {shapDeltaData.length > 0 && (
-        <div>
-          <div
-            style={{
-              fontSize: '12px',
-              fontWeight: 600,
-              color: 'var(--text-secondary)',
-              marginBottom: '8px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px'
-            }}
-          >
-            Price Change Breakdown
-          </div>
-          <ResponsiveContainer width="100%" height={120}>
-            <BarChart
-              data={shapDeltaData}
-              layout="vertical"
-              margin={{ left: 140, right: 20 }}
-            >
-              <XAxis
-                type="number"
-                tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                tick={{ fontSize: 11 }}
-              />
-              <YAxis type="category" dataKey="feature" width={140} tick={{ fontSize: 12 }} />
-              <Tooltip
-                formatter={(v) => [
-                  `$${Math.abs(v).toLocaleString()}`,
-                  v >= 0 ? 'Increase' : 'Decrease'
-                ]}
-              />
-              <ReferenceLine x={0} stroke="#e5e7eb" />
-              <Bar dataKey="delta" radius={[0, 4, 4, 0]}>
-                {shapDeltaData.map((d) => (
-                  <Cell key={d.feature} fill={d.delta >= 0 ? '#22c55e' : '#ef4444'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
     </div>
   )
 }

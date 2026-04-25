@@ -223,7 +223,12 @@ def compute_nearby(lat: float, lng: float, radius_m: float = 2000.0) -> dict[str
         items.sort(key=lambda x: x["dist_m"])
         result[category] = items
 
-    # Highways: contiguous polylines (not per-point markers). Include segment if any vertex in range.
+    # Highways: contiguous polylines. Always return ALL segments (Singapore has
+    # only ~13 of them — total <100 KB) and tag each with its closest distance
+    # so the UI can sort/badge. Filtering by `radius_m` based on the sparse CSV
+    # vertices was dropping segments whose road actually passes within walking
+    # distance but whose nearest *sampled* point happened to land just outside
+    # the radius (e.g. Sengkang flats lost PIE / TPE entirely).
     result["highway"] = []
     hwy_segments: list[dict[str, Any]] = []
     for seg in _get_highway_polyline_segments():
@@ -233,11 +238,9 @@ def compute_nearby(lat: float, lng: float, radius_m: float = 2000.0) -> dict[str
         best = min(
             _haversine_m(lat, lng, float(p[0]), float(p[1])) for p in latlngs
         )
-        if best <= radius_m:
-            row = {**seg, "dist_m": round(best)}
-            hwy_segments.append(row)
+        hwy_segments.append({**seg, "dist_m": round(best)})
     hwy_segments.sort(key=lambda x: x["dist_m"])
-    result["highway_segments"] = hwy_segments[:40]
+    result["highway_segments"] = hwy_segments
 
     return result
 
