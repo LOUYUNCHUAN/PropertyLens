@@ -35,6 +35,30 @@ export default function LocationMap({
   const amenityMarkersRef = useRef({})
   const [activeCategory, setActiveCategory] = useState('all')
   const [selectedItem, setSelectedItem] = useState(null)
+  // Highway polylines are noisy: backend returns ALL ~13 island-wide
+  // segments tagged with their distance to this pin. Cap to 2km so the map
+  // only shows highways that meaningfully neighbour the property, and let
+  // the user hide them entirely via a toggle.
+  const HIGHWAY_RADIUS_M = 2000
+  const [showHighways, setShowHighways] = useState(true)
+
+  const highwaySegmentsNearby = useMemo(() => {
+    const segs = nearby?.highway_segments
+    if (!Array.isArray(segs)) return []
+    return segs.filter((s) => {
+      const d = Number(s?.dist_m)
+      return !Number.isFinite(d) || d <= HIGHWAY_RADIUS_M
+    })
+  }, [nearby])
+
+  const highwayMarkersNearby = useMemo(() => {
+    const items = nearby?.highway
+    if (!Array.isArray(items)) return []
+    return items.filter((it) => {
+      const d = Number(it?.dist_m)
+      return !Number.isFinite(d) || d <= HIGHWAY_RADIUS_M
+    })
+  }, [nearby])
 
   const hasGeocode = geocode && geocode.found
   const center = hasGeocode
@@ -159,9 +183,9 @@ export default function LocationMap({
     layers.push(flatMarker)
 
     if (nearby) {
-      const segs = nearby.highway_segments
+      const segs = highwaySegmentsNearby
       if (
-        Array.isArray(segs) &&
+        showHighways &&
         segs.length > 0 &&
         (activeCategory === 'all' || activeCategory === 'highway')
       ) {
@@ -205,12 +229,12 @@ export default function LocationMap({
           layers.push(line)
         })
       } else if (
-        Array.isArray(nearby.highway) &&
-        nearby.highway.length > 0 &&
+        showHighways &&
+        highwayMarkersNearby.length > 0 &&
         (activeCategory === 'all' || activeCategory === 'highway')
       ) {
-        for (let idx = 0; idx < nearby.highway.length; idx++) {
-          const item = nearby.highway[idx]
+        for (let idx = 0; idx < highwayMarkersNearby.length; idx++) {
+          const item = highwayMarkersNearby[idx]
           const key = `highway-${idx}`
           const isSelected = selectedItem === key
           const icon = makeAmenityIcon('highway', isSelected)
@@ -256,7 +280,16 @@ export default function LocationMap({
     }
 
     layersRef.current = layers
-  }, [nearby, activeCategory, selectedItem, geocode?.lat, geocode?.lng])
+  }, [
+    nearby,
+    activeCategory,
+    selectedItem,
+    geocode?.lat,
+    geocode?.lng,
+    showHighways,
+    highwaySegmentsNearby,
+    highwayMarkersNearby
+  ])
 
   const handleSidebarClick = useCallback((key) => {
     setSelectedItem((prev) => (prev === key ? null : key))
@@ -268,22 +301,21 @@ export default function LocationMap({
 
   const totalNearby = useMemo(() => {
     if (!nearby) return 0
-    const segN = Array.isArray(nearby.highway_segments) ? nearby.highway_segments.length : 0
-    const legacyH = segN > 0 ? 0 : Array.isArray(nearby.highway) ? nearby.highway.length : 0
+    const segN = highwaySegmentsNearby.length
+    const legacyH = segN > 0 ? 0 : highwayMarkersNearby.length
     let n = segN + legacyH
     for (const [k, arr] of Object.entries(nearby)) {
       if (k === 'highway' || k === 'highway_segments') continue
       n += Array.isArray(arr) ? arr.length : 0
     }
     return n
-  }, [nearby])
+  }, [nearby, highwaySegmentsNearby, highwayMarkersNearby])
 
   const gridItems = useMemo(() => {
     if (!nearby) return []
     const out = []
-    const segs = nearby.highway_segments
+    const segs = highwaySegmentsNearby
     if (
-      Array.isArray(segs) &&
       segs.length > 0 &&
       (activeCategory === 'all' || activeCategory === 'highway')
     ) {
@@ -300,11 +332,10 @@ export default function LocationMap({
         })
       })
     } else if (
-      Array.isArray(nearby.highway) &&
-      nearby.highway.length > 0 &&
+      highwayMarkersNearby.length > 0 &&
       (activeCategory === 'all' || activeCategory === 'highway')
     ) {
-      nearby.highway.forEach((item, idx) => {
+      highwayMarkersNearby.forEach((item, idx) => {
         out.push({ cat: 'highway', item, key: `highway-${idx}` })
       })
     }
@@ -317,7 +348,7 @@ export default function LocationMap({
       })
     }
     return out
-  }, [nearby, activeCategory])
+  }, [nearby, activeCategory, highwaySegmentsNearby, highwayMarkersNearby])
 
   return (
     <div style={{ position: 'relative', width: '100%' }}>
@@ -339,7 +370,7 @@ export default function LocationMap({
             cat.key === 'all'
               ? totalNearby
               : cat.key === 'highway'
-                ? (nearby?.highway_segments?.length ?? nearby?.highway?.length ?? 0)
+                ? (highwaySegmentsNearby.length || highwayMarkersNearby.length)
                 : (nearby?.[cat.key] || []).length
           const isActive = activeCategory === cat.key
           return (
@@ -381,6 +412,33 @@ export default function LocationMap({
             </button>
           )
         })}
+
+        <label
+          title="Toggle highways within 2km"
+          style={{
+            marginLeft: 'auto',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '20px',
+            border: '1.5px solid var(--border)',
+            background: 'white',
+            color: 'var(--ink-light)',
+            fontSize: '12px',
+            fontWeight: 500,
+            cursor: 'pointer'
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={showHighways}
+            onChange={(e) => setShowHighways(e.target.checked)}
+            style={{ cursor: 'pointer', accentColor: '#4a7c6f' }}
+          />
+          <span aria-hidden>🛣️</span>
+          Show highways
+        </label>
       </div>
 
       <div className="flex flex-col gap-3">

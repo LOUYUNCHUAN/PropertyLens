@@ -84,10 +84,14 @@ export function amenityTooltipHtml(item, category) {
  */
 /**
  * Dedupe highway polylines across selected listings (same corridor = same first vertex key).
+ * Segments whose closest sampled point is farther than `maxDistM` from a
+ * given listing are skipped before dedupe — so a corridor only enters the
+ * output if at least one selected listing has it within range.
  */
-export function mergeHighwaySegmentsDeduped(nearbyById, selectedIds) {
+export function mergeHighwaySegmentsDeduped(nearbyById, selectedIds, maxDistM = 2000) {
   const seen = new Set()
   const out = []
+  const cap = Number.isFinite(maxDistM) ? Number(maxDistM) : Infinity
   for (const id of selectedIds) {
     const nearby = nearbyById[id]
     if (!nearby) continue
@@ -100,6 +104,8 @@ export function mergeHighwaySegmentsDeduped(nearbyById, selectedIds) {
       for (const seg of segs) {
         const ll = seg?.latlngs
         if (!Array.isArray(ll) || ll.length < 2) continue
+        const d = Number(seg?.dist_m)
+        if (Number.isFinite(d) && d > cap) continue
         const key = `${seg.name || ''}|${Math.round(ll[0][0] * 1e5)}|${Math.round(ll[0][1] * 1e5)}`
         if (seen.has(key)) continue
         seen.add(key)
