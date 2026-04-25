@@ -3,14 +3,12 @@ backend/chat_tools.py
 ---------------------
 Shared tool triggers + helpers used by chat endpoints.
 
-This module exists so multiple endpoints (e.g. /api/rag-chat and
-/api/property-search-chat) can reuse the same tool logic:
+Used by /api/property-search-chat and any future chat-style endpoints to
+reuse the same tool logic:
   - predict price
   - CBR similar sales
   - SHAP explanation
   - shortlist / wishlist lookup
-
-It is extracted from backend/rag_chat.py to keep beta behavior unchanged.
 """
 
 from __future__ import annotations
@@ -68,10 +66,7 @@ _SMALLTALK_DOMAIN_GUARD = re.compile(
 
 
 def classify_smalltalk(msg: str) -> str | None:
-    """Return 'ack' | 'social' | None.
-
-    Mirrors the behavior of backend/rag_chat.py but is reusable by other endpoints.
-    """
+    """Return 'ack' | 'social' | None."""
     clean = (msg or "").strip().lower().rstrip(".!?")
     if not clean:
         return None

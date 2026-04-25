@@ -1,7 +1,7 @@
 """Single source of truth for HDB towns, mature estates, and street→town aliases.
 
-Imported by `backend/chat.py` (intent extraction) and `backend/rag_chat.py`
-(NL flat extraction). Do NOT duplicate these constants in other modules —
+Imported by `backend/chat.py` (intent extraction) and other modules that need
+NL flat / town parsing. Do NOT duplicate these constants in other modules —
 add new mappings here so every code path sees them.
 """
 from __future__ import annotations

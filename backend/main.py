@@ -148,16 +148,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ User history DB init failed: {e}")
 
-    try:
-        from backend.rag_v51.warmup import should_warm_rag_v51_on_startup, warm_rag_v51_encoders
-
-        if should_warm_rag_v51_on_startup():
-            warm_rag_v51_encoders()
-    except Exception as e:
-        import traceback
-        print(f"⚠️ RAG v5.1 warmup failed (first /api/rag-chat may load encoders slowly): {e}")
-        print(traceback.format_exc())
-
     yield
     print("Shutting down")
 
@@ -207,7 +197,6 @@ from backend.history import router as history_router  # noqa: E402
 from backend.wishlist import router as wishlist_router  # noqa: E402
 from backend.auth_routes import router as auth_router  # noqa: E402
 from backend.constraints import validate_listing, ValidateRequest  # noqa: E402
-from backend.rag_chat import router as rag_chat_router  # noqa: E402
 from backend.property_search_chat import router as property_search_chat_router  # noqa: E402
 from backend.photo_condition import router as photo_condition_router  # noqa: E402
 
@@ -220,7 +209,6 @@ app.include_router(location_router, prefix="/api")
 app.include_router(history_router, prefix="/api")
 app.include_router(wishlist_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
-app.include_router(rag_chat_router, prefix="/api")
 app.include_router(property_search_chat_router, prefix="/api")
 app.include_router(photo_condition_router, prefix="/api")
 
@@ -228,14 +216,6 @@ app.include_router(photo_condition_router, prefix="/api")
 @app.post("/api/validate-listing")
 def validate_listing_endpoint(req: ValidateRequest):
     return validate_listing(req)
-
-
-@app.get("/api/rag-chat/diag")
-def rag_chat_diag():
-    """Probe every rag-chat dependency (Ollama / Pinecone / BM25 / encoders) without triggering downloads."""
-    from backend.rag_v51.diag import run_diagnostics
-
-    return run_diagnostics()
 
 
 # ── Policy KB endpoint ────────────────────────────────────────────
