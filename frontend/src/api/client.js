@@ -65,11 +65,18 @@ export const predictPrice = (data) =>
 export const getSHAP = (data) =>
   API.post('/api/explain/shap', { flat: data }).then((r) => r.data)
 
+/** Composite TreeSHAP over the full hybrid stack (XGB+LGB+RF, Ridge excluded). */
+export const getCompositeSHAP = (data) =>
+  API.post('/api/explain/composite-shap', { flat: data }).then((r) => r.data)
+
 export const getLIME = (data) =>
   API.post('/api/explain/lime', { flat: data }).then((r) => r.data)
 
 export const getCBR = (data, k = 5) =>
   API.post('/api/cbr/similar', { flat: data, k }).then((r) => r.data)
+
+export const explainBuyerView = (data, k = 30) =>
+  API.post('/api/explain/buyer-view', { flat: data, k }).then((r) => r.data)
 
 export const getCounterfactual = (payload) =>
   API.post('/api/counterfactual', payload).then((r) => r.data)
@@ -91,18 +98,23 @@ export const getModelMeta = () =>
 export const getTownSummary = () =>
   API.get('/api/analytics/town-summary').then((r) => r.data)
 
-export const getGlobalSHAP = (cluster_id) =>
+export const getGlobalSHAP = (cluster_id, source = 'composite') =>
   API.get('/api/analytics/global-shap', {
-    params:
-      cluster_id == null || cluster_id === ''
-        ? {}
-        : { cluster_id }
+    params: {
+      ...(cluster_id == null || cluster_id === '' ? {} : { cluster_id }),
+      source
+    }
   }).then((r) => r.data)
 
 export const getTrends = (town) =>
   API.get('/api/analytics/trends', { params: town ? { town } : {} }).then(
     (r) => r.data
   )
+
+export const getRecentTransactions = ({ limit = 15, town } = {}) =>
+  API.get('/api/analytics/recent-transactions', {
+    params: { limit, ...(town ? { town } : {}) }
+  }).then((r) => r.data)
 
 export const getRules = () =>
   API.get('/api/rules').then((r) => r.data)
@@ -137,6 +149,9 @@ export const changePasswordApi = (current_password, new_password) =>
 
 export const getNeo4jKb = () =>
   API.get('/api/debug/neo4j-kb').then((r) => r.data)
+
+export const getPropertySearchGraph = () =>
+  API.get('/api/debug/property-search-graph').then((r) => r.data)
 
 export const getPolicyImpact = (town) =>
   API.get(`/api/kb/policy-impact/${encodeURIComponent(town)}`).then((r) => r.data)
@@ -319,6 +334,96 @@ export const streamRagChat = (payload, callbacks = {}) => {
             (typeof j.detail === 'string' && j.detail) ||
             j.message ||
             raw
+        } catch {
+          /* use raw */
+        }
+        throw new Error(msg || `HTTP ${res.status}`)
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) break
+        parser.push(decoder.decode(value, { stream: true }))
+      }
+      parser.flush()
+      onDone?.()
+    } catch (e) {
+      if (e?.name !== 'AbortError') onError?.(e)
+    } finally {
+      clearTimeout(tid)
+    }
+  })()
+
+  return ctrl
+}
+
+/**
+ * Streaming property-search chat (Layer 06 style).
+ * Separate from beta VectorDB (/api/rag-chat).
+ *
+ * Callbacks:
+ *   onStatus(string)
+ *   onLog({level, text})
+ *   onParams(obj)
+ *   onToken(piece)
+ *   onDone()
+ *   onError(Error)
+ */
+export const streamPropertySearchChat = (payload, callbacks = {}) => {
+  const { onStatus, onToken, onDone, onError, onLog, onParams } = callbacks
+  const base = apiBaseURL()
+  const url = base
+    ? `${String(base).replace(/\/$/, '')}/api/property-search-chat`
+    : '/api/property-search-chat'
+  const headers = { 'Content-Type': 'application/json' }
+  const ctrl = new AbortController()
+  const tid = setTimeout(() => ctrl.abort(), 180000)
+
+  const decodeSseText = (s) =>
+    String(s || '')
+      .replaceAll('\\\\', '\\')
+      .replaceAll('\\n', '\n')
+
+  const parser = createChatSseStreamParser((event) => {
+    if (event === '[DONE]') return
+    const logMatch = /^\[LOG\](.*?)\|(.*)\[\/LOG\]$/.exec(event)
+    if (logMatch) {
+      onLog?.({ level: logMatch[1], text: decodeSseText(logMatch[2]) })
+      return
+    }
+    const statusMatch = /^\[STATUS\](.*)\[\/STATUS\]$/.exec(event)
+    if (statusMatch) {
+      onStatus?.(statusMatch[1])
+      return
+    }
+    const paramsMatch = /^\[PARAMS\]([\s\S]*)\[\/PARAMS\]$/.exec(event)
+    if (paramsMatch) {
+      try {
+        const obj = JSON.parse(paramsMatch[1])
+        onParams?.(obj)
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+    onToken?.(decodeSseText(event))
+  })
+
+  ;(async () => {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: ctrl.signal
+      })
+      if (!res.ok) {
+        const raw = await res.text()
+        let msg = raw
+        try {
+          const j = JSON.parse(raw)
+          msg = (typeof j.detail === 'string' && j.detail) || j.message || raw
         } catch {
           /* use raw */
         }

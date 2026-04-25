@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { apiLogs, getNeo4jKb, api } from '../api/client.js'
-import Neo4jGraph from '../components/Neo4jGraph.jsx'
+import { apiLogs, getPropertySearchGraph, api } from '../api/client.js'
+import PropertySearchGraph from '../components/PropertySearchGraph.jsx'
 
 const tableStyle = {
   width: '100%',
@@ -20,110 +20,171 @@ const tdStyle = {
   borderBottom: '1px solid #e5e7eb',
 }
 
+function fmtMoney(v) {
+  if (v == null || Number.isNaN(Number(v))) return '—'
+  return `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+}
+
+function fmtNum(v, digits = 0) {
+  if (v == null || Number.isNaN(Number(v))) return '—'
+  return Number(v).toLocaleString(undefined, { maximumFractionDigits: digits })
+}
+
 export default function DebugView() {
   const [health, setHealth] = useState(null)
-  const [neo4j, setNeo4j] = useState(null)
-  const [neo4jKb, setNeo4jKb] = useState({ nodes: [], links: [], error: null })
+  const [psGraph, setPsGraph] = useState({
+    ok: false,
+    stats: null,
+    nodes: [],
+    links: [],
+    sample_properties: [],
+    error: null,
+  })
 
   useEffect(() => {
     api.get('/health')
       .then((r) => setHealth(r.data))
       .catch(() => setHealth({ status: 'error' }))
 
-    api.get('/api/analytics/global-shap')
-      .then(() => setNeo4j('ok'))
-      .catch(() => setNeo4j('error'))
-
-    getNeo4jKb()
-      .then((data) => setNeo4jKb({ nodes: data.nodes || [], links: data.links || [], error: data.error || null }))
-      .catch((err) => setNeo4jKb({ nodes: [], links: [], error: err.message || 'Failed to load KB' }))
+    getPropertySearchGraph()
+      .then((data) => {
+        if (data?.ok) {
+          setPsGraph({
+            ok: true,
+            stats: data.stats || null,
+            nodes: data.nodes || [],
+            links: data.links || [],
+            sample_properties: data.sample_properties || [],
+            error: null,
+          })
+        } else {
+          setPsGraph({
+            ok: false,
+            stats: null,
+            nodes: [],
+            links: [],
+            sample_properties: [],
+            error: data?.error || 'Property search graph unavailable.',
+          })
+        }
+      })
+      .catch((err) =>
+        setPsGraph({
+          ok: false,
+          stats: null,
+          nodes: [],
+          links: [],
+          sample_properties: [],
+          error: err?.message || 'Failed to load property search graph',
+        })
+      )
   }, [])
 
-  const { nodes, links, error } = neo4jKb
+  const { stats, nodes, links, sample_properties: samples, error } = psGraph
+  const towns = nodes.filter((n) => n.type === 'Town')
+  const schools = nodes.filter((n) => n.type === 'FamousSchool')
 
   return (
     <div style={{ display: 'grid', gap: 24 }}>
-      <section
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: 16
-        }}
-      >
-        <div className="card">
-          <div className="section-label">API / model health</div>
-          <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-            <div>
-              Backend /health:{' '}
-              <strong>{health ? String(health.status || 'unknown') : 'checking…'}</strong>
-            </div>
-            <div style={{ marginTop: 8 }}>
-              Full model:{' '}
-              <span>
-                ✅ loaded (R² {health?.r2?.toFixed ? health.r2.toFixed(4) : '—'}
-                , RMSE ${health?.rmse?.toLocaleString?.() || '—'}
-                , MAPE {health?.mape_pct ?? '—'}%)
-              </span>
-            </div>
-            <div>
-              Normalised model:{' '}
-              <span>
-                {health?.normalised_model_loaded ? '✅ loaded (ensemble active)' : '⏸ not loaded'}
-              </span>
-            </div>
-            <div>
-              Ensemble type:{' '}
-              <span>{health?.ensemble_type || '—'}</span>
-            </div>
+      <section className="card">
+        <div className="section-label">API / model health</div>
+        <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+          <div>
+            Backend /health:{' '}
+            <strong>{health ? String(health.status || 'unknown') : 'checking…'}</strong>
           </div>
-        </div>
-        <div className="card">
-          <div className="section-label">Neo4j / analytics smoke</div>
-          <div style={{ fontSize: 14 }}>
-            Global SHAP endpoint:{' '}
-            <strong>{neo4j ? String(neo4j) : 'checking…'}</strong>
+          <div style={{ marginTop: 8 }}>
+            Full model:{' '}
+            <span>
+              ✅ loaded (R² {health?.r2?.toFixed ? health.r2.toFixed(4) : '—'}
+              , RMSE ${health?.rmse?.toLocaleString?.() || '—'}
+              , MAPE {health?.mape_pct ?? '—'}%)
+            </span>
+          </div>
+          <div>
+            Normalised model:{' '}
+            <span>
+              {health?.normalised_model_loaded ? '✅ loaded (ensemble active)' : '⏸ not loaded'}
+            </span>
+          </div>
+          <div>
+            Ensemble type:{' '}
+            <span>{health?.ensemble_type || '—'}</span>
           </div>
         </div>
       </section>
 
-      {/* Neo4j Knowledge Base — Graph + Tables */}
       <section className="card">
-        <div className="section-label">Neo4j Knowledge Base</div>
+        <div className="section-label">Property Search AI · Neo4j</div>
         <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 16 }}>
-          Graph and tabular view of towns, MRTs, schools, policies, regions, and rules.
+          Graph powering the Property Search AI chatbot. Nodes are Towns and Famous Schools;
+          Property nodes are aggregated as counts. Edges show how many flats in a town are within
+          ~2 km of each famous school.
         </p>
+
+        {stats ? (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+              gap: 8,
+              fontSize: 12,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ padding: 8, border: '1px solid #e5e7eb', borderRadius: 6 }}>
+              <div style={{ color: '#6b7280' }}>Properties</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{fmtNum(stats.property_count)}</div>
+            </div>
+            <div style={{ padding: 8, border: '1px solid #e5e7eb', borderRadius: 6 }}>
+              <div style={{ color: '#6b7280' }}>Towns</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{fmtNum(stats.town_count)}</div>
+            </div>
+            <div style={{ padding: 8, border: '1px solid #e5e7eb', borderRadius: 6 }}>
+              <div style={{ color: '#6b7280' }}>Famous schools</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{fmtNum(stats.famous_school_count)}</div>
+            </div>
+            <div style={{ padding: 8, border: '1px solid #e5e7eb', borderRadius: 6 }}>
+              <div style={{ color: '#6b7280' }}>NEAREST rels</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{fmtNum(stats.nearest_rel_count)}</div>
+            </div>
+            <div style={{ padding: 8, border: '1px solid #e5e7eb', borderRadius: 6 }}>
+              <div style={{ color: '#6b7280' }}>NEAR rels (≤2 km)</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{fmtNum(stats.near_rel_count)}</div>
+            </div>
+          </div>
+        ) : null}
+
         <div style={{ marginBottom: 24 }}>
-          <Neo4jGraph nodes={nodes} links={links} error={error} />
+          <PropertySearchGraph nodes={nodes} links={links} error={error} />
         </div>
 
         <div style={{ display: 'grid', gap: 24 }}>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#374151' }}>Nodes</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#374151' }}>
+              Towns ({towns.length})
+            </div>
             <div style={{ maxHeight: 280, overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
               <table style={tableStyle}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>Id</th>
-                    <th style={thStyle}>Type</th>
-                    <th style={thStyle}>Label</th>
-                    <th style={thStyle}>Extra</th>
+                    <th style={thStyle}>Town</th>
+                    <th style={thStyle}>Flats</th>
+                    <th style={thStyle}>Avg resale price</th>
+                    <th style={thStyle}>Avg MRT distance</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {nodes.length === 0 && (
+                  {towns.length === 0 && (
                     <tr><td colSpan={4} style={tdStyle}>No data</td></tr>
                   )}
-                  {nodes.map((n, i) => (
-                    <tr key={n.id || i}>
-                      <td style={tdStyle}>{n.id}</td>
-                      <td style={tdStyle}>{n.type}</td>
-                      <td style={tdStyle}>{n.label}</td>
+                  {towns.map((t) => (
+                    <tr key={t.id}>
+                      <td style={tdStyle}>{t.label}</td>
+                      <td style={tdStyle}>{fmtNum(t.property_count)}</td>
+                      <td style={tdStyle}>{fmtMoney(t.avg_resale_price)}</td>
                       <td style={tdStyle}>
-                        {n.region != null && `region: ${n.region}`}
-                        {n.median_price != null && ` median: $${Number(n.median_price).toLocaleString()}`}
-                        {n.year != null && ` year: ${n.year}`}
-                        {n.dist_km != null && ` dist_km: ${n.dist_km}`}
-                        {n.confidence != null && ` conf: ${Number(n.confidence).toFixed(2)}`}
+                        {t.avg_dist_to_mrt_m != null ? `${fmtNum(t.avg_dist_to_mrt_m, 0)} m` : '—'}
                       </td>
                     </tr>
                   ))}
@@ -131,37 +192,78 @@ export default function DebugView() {
               </table>
             </div>
           </div>
+
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#374151' }}>Relationships</div>
-            <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#374151' }}>
+              Famous schools ({schools.length})
+            </div>
+            <div style={{ maxHeight: 280, overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
               <table style={tableStyle}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>Source</th>
-                    <th style={thStyle}>Target</th>
-                    <th style={thStyle}>Type</th>
-                    <th style={thStyle}>Props</th>
+                    <th style={thStyle}>School</th>
+                    <th style={thStyle}>Flats with this as nearest</th>
+                    <th style={thStyle}>Flats within ~2 km</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {links.length === 0 && (
-                    <tr><td colSpan={4} style={tdStyle}>No data</td></tr>
+                  {schools.length === 0 && (
+                    <tr><td colSpan={3} style={tdStyle}>No data</td></tr>
                   )}
-                  {links.map((l, i) => (
-                    <tr key={`${l.source}-${l.target}-${l.type}-${i}`}>
-                      <td style={tdStyle}>{l.source}</td>
-                      <td style={tdStyle}>{l.target}</td>
-                      <td style={tdStyle}>{l.type}</td>
-                      <td style={tdStyle}>
-                        {l.dist_km != null && `dist_km: ${l.dist_km}`}
-                        {l.impact != null && ` impact: ${l.impact}`}
-                      </td>
+                  {schools.map((s) => (
+                    <tr key={s.id}>
+                      <td style={tdStyle}>{s.label}</td>
+                      <td style={tdStyle}>{fmtNum(s.nearest_property_count)}</td>
+                      <td style={tdStyle}>{fmtNum(s.near_property_count)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
+
+          <details>
+            <summary
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#374151',
+                cursor: 'pointer',
+                marginBottom: 8,
+              }}
+            >
+              Sample properties ({samples.length})
+            </summary>
+            <div style={{ maxHeight: 280, overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Address</th>
+                    <th style={thStyle}>Town</th>
+                    <th style={thStyle}>Type</th>
+                    <th style={thStyle}>Price</th>
+                    <th style={thStyle}>score_mrt</th>
+                    <th style={thStyle}>score_famous_school</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {samples.length === 0 && (
+                    <tr><td colSpan={6} style={tdStyle}>No sample rows</td></tr>
+                  )}
+                  {samples.map((s, i) => (
+                    <tr key={`${s.address_key}-${i}`}>
+                      <td style={tdStyle}>{s.address_key}</td>
+                      <td style={tdStyle}>{s.town}</td>
+                      <td style={tdStyle}>{s.flat_type}</td>
+                      <td style={tdStyle}>{fmtMoney(s.resale_price)}</td>
+                      <td style={tdStyle}>{fmtNum(s.score_mrt, 1)}</td>
+                      <td style={tdStyle}>{fmtNum(s.score_famous_school, 1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -208,4 +310,3 @@ export default function DebugView() {
     </div>
   )
 }
-

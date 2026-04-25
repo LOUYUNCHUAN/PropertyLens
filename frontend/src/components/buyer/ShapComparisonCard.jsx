@@ -99,9 +99,14 @@ export default function ShapComparisonCard({ driver }) {
 
       <p className="text-[10px] leading-relaxed text-muted-foreground">
         {isAboveAvg
-          ? `This flat's ${label.toLowerCase()} contributes ${fmtAbs(localShap)} more than the typical HDB flat — a positive factor in this price.`
-          : `This flat's ${label.toLowerCase()} contributes ${fmtAbs(localShap)} less than the typical HDB flat — reflected in the lower estimate.`}
+          ? `Adds roughly ${fmtAbs(localShap)} to this flat's estimate vs average.`
+          : `Reduces this flat's estimate by about ${fmtAbs(localShap)} vs average.`}
       </p>
+      {!isAboveAvg && (
+        <p className="text-[10px] italic leading-relaxed text-muted-foreground/80">
+          Not a negative — just why the price is lower than average.
+        </p>
+      )}
     </div>
   )
 }

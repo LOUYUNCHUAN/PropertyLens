@@ -7,9 +7,14 @@ import LocationMap from '@/components/LocationMap.jsx'
 import BuyerStepCard from '@/components/buyer/BuyerStepCard.jsx'
 import BuyerStepProgressBar from '@/components/buyer/BuyerStepProgressBar.jsx'
 import ShapComparisonCard from '@/components/buyer/ShapComparisonCard.jsx'
+import BuyerEstimateInsightsV2 from '@/components/buyer/BuyerEstimateInsightsV2.jsx'
+import CompositeShapPanel from '@/components/buyer/CompositeShapPanel.jsx'
 import { PriceRangeCard } from '@/components/price-range-card.jsx'
+import PricingCardB from '@/components/buyer/PricingCardB.jsx'
+import BuyerOfferPlannerCard from '@/components/buyer/BuyerOfferPlannerCard.jsx'
 import { WhatIfSlider } from '@/components/whatif/WhatIfSlider.jsx'
 import {
+  applyWhatIfOverrides,
   defaultSaleMonth,
   parseStoreyMid,
   remainingLeaseApprox
@@ -31,24 +36,27 @@ import {
 
 const fmt = (n) => `$${Math.round(n).toLocaleString()}`
 
+/** Phrase for how close the rule-of-thumb price is to the AI estimate. */
+function agreementPhrase(gapPct) {
+  const g = Math.abs(Number(gapPct) || 0)
+  if (g < 3) return 'in tight agreement'
+  if (g <= 10) return 'broadly consistent'
+  if (g <= 20) return 'noticeably different — worth a closer look'
+  return 'big gap — check the driver breakdown above'
+}
+
 function getBaselineLabel(baseValue) {
   const v = Number(baseValue) || 0
-  return v > 480000 ? 'Higher-value flat baseline' : 'National HDB baseline'
+  return v > 480000 ? 'Average price for similar flats' : 'Average HDB flat price'
 }
 
 function getBaselineSubLabel(baseValue) {
   const v = Number(baseValue) || 0
-  return v > 480000
-    ? 'avg for similar higher-value HDB profiles'
-    : 'avg across all HDB resale flats'
+  return v > 480000 ? 'similar profile' : 'island-wide'
 }
 
-function getFooterText(baseValue, isAbove) {
-  const v = Number(baseValue) || 0
-  const context = v > 480000 ? 'higher-value flat profiles' : 'the national average'
-  return isAbove
-    ? `The 4 cards below explain what drives this flat's price above ${context}.`
-    : `The 4 cards below explain what drives this flat's price below ${context}.`
+function getFooterText() {
+  return 'Below: the 4 biggest reasons this flat costs more or less than average.'
 }
 
 function BaselineContextPanel({ baseValue, predictedPrice }) {
@@ -60,7 +68,7 @@ function BaselineContextPanel({ baseValue, predictedPrice }) {
   const isAbove = gap >= 0
   const baselineLabel = getBaselineLabel(base)
   const baselineSubLabel = getBaselineSubLabel(base)
-  const footerText = getFooterText(base, isAbove)
+  const footerText = getFooterText()
   const formatSGD = (val) =>
     new Intl.NumberFormat('en-SG', {
       style: 'currency',
@@ -116,25 +124,16 @@ function BaselineContextPanel({ baseValue, predictedPrice }) {
   )
 }
 
-function buildWhatIfBase(fullFlatPayload, locationContext) {
+/**
+ * Base payload for what-if. We INTENTIONALLY keep block/street/sale_month so
+ * the backend stays on the feature-table path — that guarantees POI features
+ * (highway dist, mall access, school quality, …) match the main prediction.
+ * locationContext is no longer needed for the what-if path, but we leave it
+ * as an accepted arg for API parity with previous callers.
+ */
+function buildWhatIfBase(fullFlatPayload /*, locationContext */) {
   if (!fullFlatPayload || typeof fullFlatPayload !== 'object') return null
-  const { block, street_name, sale_month, storey_range, ...rest } = fullFlatPayload
-
-  const lc = locationContext && typeof locationContext === 'object' ? locationContext : null
-  if (!lc) return rest
-
-  const toKm = (m) => (Number(m) || 0) / 1000
-  return {
-    ...rest,
-    dist_nearest_mrt_km: toKm(lc.dist_to_mrt_m),
-    dist_nearest_primary_school_km: toKm(lc.dist_to_school_m),
-    dist_nearest_hawker_km: toKm(lc.dist_to_hawker_m),
-    dist_nearest_market_km: toKm(lc.dist_to_mall_m),
-    primary_schools_within_1km: Number(lc.school_count_1km) || 0,
-    top_school_within_1km: lc.top_school_within_1km ? 1 : 0,
-    mall_count_3km: Number(lc.mall_count_3km) || 0,
-    is_mature_estate: lc.is_mature_estate ? 1 : 0
-  }
+  return fullFlatPayload
 }
 
 function WhatIfTool({ originalFlat, originalPrediction, locationContext }) {
@@ -177,12 +176,12 @@ function WhatIfTool({ originalFlat, originalPrediction, locationContext }) {
       debounceRef.current = window.setTimeout(async () => {
         setIsLoading(true)
         try {
-          const payload = {
-            ...whatIfBase,
-            floor_area_sqm: area,
+          const payload = applyWhatIfOverrides(whatIfBase, {
+            storey_mid: floor,
             remaining_lease_years: leaseYrs,
-            storey_mid: floor
-          }
+            floor_area_sqm: area
+          })
+          if (!payload) return
           const r = await fetch('/api/predict', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -231,17 +230,19 @@ function WhatIfTool({ originalFlat, originalPrediction, locationContext }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 rounded-lg border border-border/40 bg-gray-50 px-4 py-3 dark:bg-muted/30">
-        <div>
+        <div className="min-w-[110px]">
           <p className="text-xs text-muted-foreground">Base estimate</p>
           <p className="text-sm font-semibold tabular-nums text-foreground">
             {formatSGD(basePred)}
           </p>
         </div>
 
-        <div className="px-2 text-center">
+        <div className="min-w-[110px] px-2 text-center">
           <p className="text-xs text-muted-foreground">difference</p>
           {isLoading ? (
-            <p className="text-xs text-muted-foreground animate-pulse">calculating…</p>
+            <p className="text-sm font-bold tabular-nums text-muted-foreground animate-pulse">
+              …
+            </p>
           ) : isModified ? (
             <p
               className={cn(
@@ -253,22 +254,26 @@ function WhatIfTool({ originalFlat, originalPrediction, locationContext }) {
               {formatSGD(delta)}
             </p>
           ) : (
-            <p className="text-xs text-muted-foreground">adjust sliders</p>
+            <p className="text-sm font-bold tabular-nums text-muted-foreground/60">—</p>
           )}
         </div>
 
-        <div className="text-right">
+        <div className="min-w-[110px] text-right">
           <p className="text-xs text-muted-foreground">Modified estimate</p>
           <p
             className={cn(
               'text-sm font-semibold tabular-nums',
-              isLoading ? 'text-muted-foreground animate-pulse' : 'text-foreground'
+              isLoading ? 'text-muted-foreground' : 'text-foreground'
             )}
           >
-            {isLoading ? '…' : formatSGD(displayPrice)}
+            {formatSGD(displayPrice)}
           </p>
         </div>
       </div>
+
+      <p className="text-[11px] text-muted-foreground">
+        Drag any slider to see how the estimate would change.
+      </p>
 
       <WhatIfSlider
         icon="📐"
@@ -318,30 +323,49 @@ function WhatIfTool({ originalFlat, originalPrediction, locationContext }) {
         formatValue={(v) => `Floor ${Math.round(v)}`}
       />
 
-      {isModified ? (
-        <button
-          type="button"
-          onClick={handleReset}
-          className="text-left text-xs text-emerald-600 hover:underline"
-        >
-          ↩ Reset to your flat&apos;s values
-        </button>
-      ) : null}
+      <button
+        type="button"
+        onClick={handleReset}
+        aria-hidden={!isModified}
+        tabIndex={isModified ? 0 : -1}
+        className={cn(
+          'text-left text-xs text-emerald-600 hover:underline transition-opacity',
+          isModified ? 'opacity-100' : 'pointer-events-none opacity-0'
+        )}
+      >
+        ↩ Reset to your flat&apos;s values
+      </button>
 
-      {isModified && modifiedPrice != null && !isLoading ? (
-        <div className="rounded-lg border border-border/40 bg-gray-50 px-4 py-3 dark:bg-muted/30">
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            <span className="font-medium">💡 </span>A flat with {Math.round(floorArea)} sqm,{' '}
-            {Math.round(lease)}-year lease on floor {Math.round(floorLevel)} in this area would
-            cost roughly{' '}
-            <span className="font-semibold text-foreground">{formatSGD(modifiedPrice)}</span> —{' '}
-            <span className={cn('font-semibold', delta > 0 ? 'text-emerald-600' : 'text-foreground')}>
-              {delta > 0 ? `+${formatSGD(delta)} more` : `${formatSGD(Math.abs(delta))} less`}
-            </span>{' '}
-            than this listing.
-          </p>
-        </div>
-      ) : null}
+      <div
+        className={cn(
+          'rounded-lg border border-border/40 bg-gray-50 px-4 py-3 transition-opacity dark:bg-muted/30',
+          isModified ? 'opacity-100' : 'pointer-events-none opacity-0'
+        )}
+        aria-hidden={!isModified}
+      >
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          <span className="font-medium">💡 </span>A flat with {Math.round(floorArea)} sqm,{' '}
+          {Math.round(lease)}-year lease on floor {Math.round(floorLevel)} in this area would
+          cost roughly{' '}
+          <span className="font-semibold text-foreground tabular-nums">
+            {formatSGD(modifiedPrice ?? basePred)}
+          </span>
+          {' — '}
+          <span
+            className={cn(
+              'font-semibold tabular-nums',
+              delta > 0 ? 'text-emerald-600' : 'text-foreground'
+            )}
+          >
+            {delta > 0
+              ? `+${formatSGD(delta)} more`
+              : delta < 0
+                ? `${formatSGD(Math.abs(delta))} less`
+                : 'the same'}
+          </span>{' '}
+          than this listing.
+        </p>
+      </div>
 
       <p className="text-[10px] text-muted-foreground">
         Estimates use the same AI model as the main prediction. Location and amenity data remain
@@ -594,7 +618,10 @@ export default function BuyerEstimateInsights({
   mapFloorArea,
   mapStoreyRange,
   mapLeaseCommence,
-  mapSaleMonth
+  mapSaleMonth,
+  // Bumped by BuyerView's floating "Plan your offer" CTA. Each tick opens
+  // step 5 (negotiation) + scrolls + focuses the planned-offer input.
+  offerFocusToken = 0
 }) {
   const stepRef0 = useRef(null)
   const stepRef1 = useRef(null)
@@ -602,6 +629,7 @@ export default function BuyerEstimateInsights({
   const stepRef3 = useRef(null)
   const stepRef4 = useRef(null)
   const stepRef5 = useRef(null)
+  const offerCardRef = useRef(null)
   const stepRefs = useMemo(
     () => [stepRef0, stepRef1, stepRef2, stepRef3, stepRef4, stepRef5],
     []
@@ -691,6 +719,13 @@ export default function BuyerEstimateInsights({
   const showPoorCompDisclaimer =
     comparables?.length > 0 && comparables[0]?.similarity_pct != null && comparables[0].similarity_pct <= 5
 
+  const cbrRecency = useMemo(() => {
+    if (!comparables?.length) return null
+    const years = comparables.map((c) => Number(c.year)).filter(Number.isFinite)
+    if (!years.length) return null
+    return { latest: Math.max(...years), earliest: Math.min(...years) }
+  }, [comparables])
+
   const markViewed = useCallback((i) => {
     setViewedSteps((prev) => {
       if (prev[i]) return prev
@@ -734,6 +769,18 @@ export default function BuyerEstimateInsights({
     setViewedSteps([false, false, false, false, false, false])
   }, [resultsKey])
 
+  // Each tick of `offerFocusToken` (driven by BuyerView's floating CTA)
+  // opens step 5 (negotiation) + scrolls into view + focuses the offer input.
+  useEffect(() => {
+    if (!offerFocusToken) return
+    setActiveStep(4) // step 5 in the UI is index 4 (0-based)
+    window.setTimeout(() => {
+      stepRef4.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      window.setTimeout(() => offerCardRef.current?.focusInput?.(), 250)
+    }, 100)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offerFocusToken])
+
   const timingYearLabel =
     saleMonthLabel && /^\d{4}/.test(String(saleMonthLabel))
       ? String(saleMonthLabel).slice(0, 4)
@@ -756,15 +803,38 @@ export default function BuyerEstimateInsights({
     </div>
   )
 
+  const pricingCardProperty = {
+    address:
+      [
+        savedFlatPayload?.block && `BLK ${savedFlatPayload.block}`,
+        savedFlatPayload?.street_name
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'This flat',
+    area: town ? toTitle(town) : '',
+    flatType: flatForm?.flat_type,
+    floor:
+      flatForm?.storey_mid != null ? `Floor ${Math.round(flatForm.storey_mid)}` : null,
+    lease:
+      flatForm?.remaining_lease_years != null
+        ? `${Math.round(flatForm.remaining_lease_years)} yr lease`
+        : null,
+    aiEstimate: predictedPrice,
+    aiLow: confidenceLow ?? (predictedPrice ? predictedPrice * 0.92 : null),
+    aiHigh: confidenceHigh ?? (predictedPrice ? predictedPrice * 1.08 : null),
+    recentSalesMedian: cbrMedian ?? predictedPrice,
+    cbrSampleSize: comparables?.length ?? 5
+  }
+
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-border/60 bg-card p-5 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-start gap-2 text-sm font-semibold text-foreground">
-          <span aria-hidden>🏠</span>
-          <span>{addressLine || 'Your listing'}</span>
-        </div>
+      {!listingAmount && (
+        <div className="rounded-xl border border-border/60 bg-card p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-start gap-2 text-sm font-semibold text-foreground">
+            <span aria-hidden>🏠</span>
+            <span>{addressLine || 'Your listing'}</span>
+          </div>
 
-        {!listingAmount && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
             <p className="text-sm font-medium text-amber-950 dark:text-amber-100">
               Enter the seller&apos;s asking price (SGD)
@@ -790,111 +860,20 @@ export default function BuyerEstimateInsights({
             </div>
             {seeAnalysisFooter}
           </div>
-        )}
+        </div>
+      )}
 
-        {listingAmount != null && (
-          <>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  AI fair value
-                </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
-                  {fmt(predictedPrice)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatConfidenceBandK(confidenceLow, confidenceHigh)}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Asking price
-                </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                  {fmt(listingAmount)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {gPct != null && (
-                    <>
-                      {gPct >= 0 ? '+' : ''}
-                      {fmt(listingAmount - predictedPrice)} ({gPct >= 0 ? '+' : ''}
-                      {gPct.toFixed(1)}%)
-                    </>
-                  )}
-                </p>
-              </div>
-              <div className="group relative">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Verdict
-                  <span
-                    tabIndex={0}
-                    className="ml-1 inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border text-[9px] text-muted-foreground"
-                    aria-label="How verdict is calculated"
-                  >
-                    ?
-                  </span>
-                </p>
-                <p className="mt-1 text-lg font-bold leading-snug">
-                  <span className="mr-1">{verdict.emoji}</span>
-                  {verdict.label}
-                </p>
-                <div className="pointer-events-none absolute right-0 top-full z-30 mt-2 hidden w-64 rounded-md border border-border bg-popover p-3 text-[11px] leading-relaxed text-popover-foreground shadow-lg group-hover:block group-focus-within:block">
-                  <p className="mb-1 font-semibold">Verdict thresholds (gap vs estimate)</p>
-                  <ul className="space-y-0.5">
-                    <li>&lt; -10%: Good deal — below market</li>
-                    <li>-10% to -3%: Slightly below estimate</li>
-                    <li>-3% to +5%: Close to market value</li>
-                    <li>+5% to +15%: Slightly above market</li>
-                    <li>+15% to +30%: Significantly overpriced</li>
-                    <li>&gt; +30%: Far above market</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <VerdictSpectrumBar
-              listing={listingAmount}
-              predicted={predictedPrice}
-              low={confidenceLow}
-              high={confidenceHigh}
-              cbrMedian={cbrMedian}
-            />
-
-            {cbrCheck?.divergence_pct != null && cbrCheck.cbr_median != null && (
-              <div className="mt-4 rounded-lg border border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Note: </span>
-                Recent comparable sales suggest a median of {fmt(cbrCheck.cbr_median)} —{' '}
-                {cbrCheck.divergence_pct > 0
-                  ? `the model estimate is ${Math.abs(cbrCheck.divergence_pct).toFixed(1)}% below that median.`
-                  : `the model estimate is ${Math.abs(cbrCheck.divergence_pct).toFixed(1)}% above that median.`}
-              </div>
-            )}
-
-            <div className="mt-4 flex flex-col gap-3 border-t border-border/40 pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full sm:w-auto"
-                onClick={scrollToFirstStep}
-              >
-                See full analysis
-                <ArrowDown className="ml-2 h-4 w-4" aria-hidden />
-              </Button>
-              <button
-                type="button"
-                className="text-left text-sm text-primary underline underline-offset-2 sm:text-right"
-                onClick={() => {
-                  setListingAmount(null)
-                  setListingInput('')
-                }}
-              >
-                Change asking price
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+      {listingAmount != null && (
+        <PricingCardB
+          property={pricingCardProperty}
+          askingPrice={listingAmount}
+          onChangeAskingPrice={() => {
+            setListingAmount(null)
+            setListingInput('')
+          }}
+          onSeeFullAnalysis={scrollToFirstStep}
+        />
+      )}
 
       {predictedPrice != null && listingAmount == null && (
         <PriceRangeCard
@@ -937,53 +916,10 @@ export default function BuyerEstimateInsights({
             onNext={() => handleStepComplete(0)}
             loading={false}
           >
-            {shap?.shap_values?.length > 0 ? (
-              <>
-                {shap?.explanation_type === 'global' && (
-                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900 dark:bg-amber-950/30">
-                    <p className="text-xs text-amber-800 dark:text-amber-200">
-                      ⚠️ Showing average feature importance — per-prediction explanation unavailable for
-                      this flat.
-                      {shap?.fallback_reason ? (
-                        <span className="mt-1 block text-[11px] opacity-90">{shap.fallback_reason}</span>
-                      ) : null}
-                    </p>
-                  </div>
-                )}
-                <p className="mb-3 text-xs text-muted-foreground">
-                  Each card compares this flat&apos;s contribution to the average across{' '}
-                  <span className="font-medium text-foreground">
-                    {totalTransactions
-                      ? `${totalTransactions.toLocaleString()} Singapore resale transactions`
-                      : 'all Singapore resale transactions in our dataset'}
-                  </span>
-                  . Above average = this flat benefits more from that factor than a typical HDB flat.
-                </p>
-                <BaselineContextPanel
-                  baseValue={shap?.base_value}
-                  predictedPrice={shap?.predicted_price ?? predictedPrice}
-                />
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {comparisonDrivers.map((driver) => (
-                    <ShapComparisonCard key={driver.feature} driver={driver} />
-                  ))}
-                </div>
-                {Math.abs(marketTimingShap) > 0.01 && (
-                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900 dark:bg-amber-950/30">
-                    <p className="block max-w-full truncate whitespace-nowrap text-xs text-amber-900 dark:text-amber-100">
-                      📈 Market timing:{' '}
-                      {marketTimingShap >= 0 ? '+' : ''}
-                      {fmt(marketTimingShap)} — broad {timingYearLabel} market timing, applies to all flats
-                    </p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                No per-factor breakdown available for this estimate — the model still produced a fair
-                value above.
-              </p>
-            )}
+            <CompositeShapPanel
+              flat={savedFlatPayload ?? flatForm}
+              hideStackBreakdown
+            />
           </BuyerStepCard>
 
           <BuyerStepCard
@@ -1007,31 +943,65 @@ export default function BuyerEstimateInsights({
             ) : (
               <>
                 {primaryApriori && (
-                  <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 dark:border-blue-900 dark:bg-blue-950/40">
-                    <p className="text-xs font-semibold text-blue-800 dark:text-blue-200">
-                      Market pattern match ({Math.round((primaryApriori.confidence || 0) * 100)}%
-                      confidence)
+                  <div className="mt-3 rounded-lg border border-border bg-muted/50 p-3">
+                    <p className="text-xs font-semibold text-foreground">
+                      Common market pattern for flats like this
                     </p>
-                    <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">
-                      Flats with {humanizeConditions(primaryApriori.if_conditions)} typically sell for{' '}
-                      <strong>{humanizeOutcome(primaryApriori.then)}</strong>.{' '}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      In <strong className="text-foreground">{Math.round((primaryApriori.confidence || 0) * 100)}%</strong> of past transactions,
+                      flats with {humanizeConditions(primaryApriori.if_conditions)} sold for{' '}
+                      <strong className="text-foreground">{humanizeOutcome(primaryApriori.then)}</strong>.{' '}
                       {listingAmount
-                        ? assessMatch(listingAmount, predictedPrice, primaryApriori)
-                        : 'Add an asking price to see how this listing compares.'}
+                        ? <>This flat&apos;s asking price {assessMatch(listingAmount, predictedPrice, primaryApriori)}.</>
+                        : 'Add an asking price above to see how this listing compares.'}
                     </p>
+                    {(primaryApriori.support || 0) > 0 && (
+                      <p className="mt-1 text-[11px] text-muted-foreground opacity-80">
+                        This pattern shows up in ~{Math.max(1, Math.round((primaryApriori.support || 0) * 100))}% of past sales.
+                      </p>
+                    )}
                   </div>
                 )}
-                {surrogateRule && (
-                  <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Price bracket rule
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                      Based on the decision tree, flats in a similar band (covering{' '}
-                      {(surrogateRule.samples || 0).toLocaleString()} similar transactions) have a typical
-                      price around <strong>{fmt(surrogateRule.then_price)}</strong>.
-                    </p>
-                  </div>
+                {surrogateRule && (() => {
+                  const rtPrice = Number(surrogateRule.then_price)
+                  const aiPrice = Number(predictedPrice)
+                  const haveBoth = Number.isFinite(rtPrice) && Number.isFinite(aiPrice) && aiPrice > 0
+                  const gapPct = haveBoth
+                    ? Math.round((Math.abs(rtPrice - aiPrice) / aiPrice) * 100)
+                    : null
+                  return (
+                    <div className="mt-2 rounded-lg border border-border bg-muted/50 p-3">
+                      <p className="text-xs font-semibold text-foreground">
+                        A simple rule-of-thumb check
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        A simple rule of thumb built from past transactions — useful as a sanity
+                        check, less precise than the AI estimate. For flats in the same bracket
+                        ({' '}
+                        <strong className="text-foreground">
+                          {(surrogateRule.samples || 0).toLocaleString()} past sales
+                        </strong>
+                        ), the typical price is around{' '}
+                        <strong className="text-foreground">{fmt(surrogateRule.then_price)}</strong>.
+                      </p>
+                      {haveBoth && (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          AI estimate: <strong className="text-foreground">{fmt(aiPrice)}</strong>
+                          {' · '}
+                          <strong className="text-foreground">{gapPct}%</strong> apart,{' '}
+                          <span className="italic">{agreementPhrase(gapPct)}</span>.
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
+                {primaryApriori && surrogateRule && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                    The AI estimate factors in 30+ details specific to this flat (floor, lease,
+                    location). The patterns above use broader groupings. When both numbers agree,
+                    confidence is high; when they diverge, scroll up to the driver breakdown to see
+                    which feature explains the gap.
+                  </p>
                 )}
                 {!primaryApriori && !surrogateRule && (
                   <p className="mt-3 text-xs text-muted-foreground">
@@ -1086,15 +1056,16 @@ export default function BuyerEstimateInsights({
             </p>
             {comparables?.length > 0 ? (
               <>
-                {showPoorCompDisclaimer && (
-                  <div className="mb-3 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:bg-amber-950/30">
-                    <p className="text-xs text-amber-800 dark:text-amber-200">
-                      ⚠️ Limited close matches found — comparables shown are from a broader search.
-                      Cross-check with recent sales in {toTitle(town) || 'this town'} for confirmation.
-                    </p>
-                  </div>
+                {cbrRecency && (
+                  <p className="mt-3 text-[11px] text-muted-foreground">
+                    Based on comparable transactions from{' '}
+                    {cbrRecency.earliest === cbrRecency.latest
+                      ? cbrRecency.latest
+                      : `${cbrRecency.earliest}–${cbrRecency.latest}`}
+                    .
+                  </p>
                 )}
-                <div className="mt-3 overflow-x-auto">
+                <div className="mt-2 overflow-x-auto">
                   <table className="w-full border-collapse text-xs">
                     <thead>
                       <tr className="border-b-2 border-border text-left">
@@ -1124,6 +1095,9 @@ export default function BuyerEstimateInsights({
                         const vsListing = listingAmount
                           ? (((c.resale_price - listingAmount) / listingAmount) * 100).toFixed(1)
                           : null
+                        const vsAIStrong = Math.abs(Number(vsAI)) > 10
+                        const vsListStrong =
+                          vsListing != null && Math.abs(Number(vsListing)) > 10
                         return (
                           <tr key={i} className="border-b border-border/60">
                             <td className="px-2 py-2 font-medium text-foreground">
@@ -1135,7 +1109,10 @@ export default function BuyerEstimateInsights({
                             <td className="px-2 py-2 text-muted-foreground">{c.year}</td>
                             <td className="px-2 py-2">
                               <span
-                                className={`font-semibold ${Number(vsAI) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}
+                                className={cn(
+                                  'tabular-nums text-muted-foreground',
+                                  vsAIStrong && 'font-semibold text-foreground'
+                                )}
                               >
                                 {Number(vsAI) >= 0 ? '+' : ''}
                                 {vsAI}%
@@ -1144,7 +1121,10 @@ export default function BuyerEstimateInsights({
                             {listingAmount && (
                               <td className="px-2 py-2">
                                 <span
-                                  className={`font-semibold ${Number(vsListing) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}
+                                  className={cn(
+                                    'tabular-nums text-muted-foreground',
+                                    vsListStrong && 'font-semibold text-foreground'
+                                  )}
                                 >
                                   {Number(vsListing) >= 0 ? '+' : ''}
                                   {vsListing}%
@@ -1160,6 +1140,12 @@ export default function BuyerEstimateInsights({
                 {cbrMedian && (
                   <p className="mt-3 text-sm text-muted-foreground">
                     Median of comparables: <strong className="text-foreground">{fmt(cbrMedian)}</strong>
+                  </p>
+                )}
+                {showPoorCompDisclaimer && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Note: limited close matches for this profile — the rows above come from a broader
+                    search. Cross-check with recent sales in {toTitle(town) || 'this town'} for confirmation.
                   </p>
                 )}
               </>
@@ -1186,33 +1172,22 @@ export default function BuyerEstimateInsights({
           >
             {!listingAmount ? (
               <p className="text-xs text-muted-foreground">
-                Add the seller&apos;s asking price in the verdict card above to see a suggested opening
-                offer and talking points.
+                Add the seller&apos;s asking price in the verdict card above to unlock your offer
+                plan, evidence pack, and seller-objection scripts.
               </p>
-            ) : negotiation ? (
-              <>
-                <p className="text-xs text-muted-foreground">
-                  Combined view from model, comparables, and patterns — not financial advice.
-                </p>
-                <div className="mt-4 rounded-lg border border-border bg-muted/20 p-4">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Suggested opening offer (anchor)
-                  </p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                    {fmt(negotiation.openingOffer)}
-                  </p>
-                  <ul className="mt-3 list-inside list-disc space-y-1 text-xs text-muted-foreground">
-                    {negotiation.notes.map((n, i) => (
-                      <li key={i}>{n}</li>
-                    ))}
-                  </ul>
-                </div>
-              </>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                Negotiation tips could not be generated for this listing — check asking price and
-                comparables.
-              </p>
+              <BuyerOfferPlannerCard
+                ref={offerCardRef}
+                asking={listingAmount}
+                predicted={predictedPrice}
+                cbrMedian={cbrMedian}
+                comparables={comparables}
+                driverCards={comparisonDrivers}
+                leaseYears={
+                  flatForm?.remaining_lease_years ??
+                  savedFlatPayload?.remaining_lease_years
+                }
+              />
             )}
           </BuyerStepCard>
 

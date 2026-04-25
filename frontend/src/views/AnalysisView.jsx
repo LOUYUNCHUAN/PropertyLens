@@ -21,8 +21,6 @@ import {
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   Tooltip,
@@ -65,64 +63,91 @@ function buildModelStats(meta) {
 }
 
 const FEATURE_LABELS = {
-  year: 'Sale Year',
+  // Time
+  transaction_year: 'Year of transaction',
+  year: 'Year of transaction',
+  years_since_2000: 'Years since 2000',
+  month_num: 'Month of sale',
+  quarter: 'Quarter of sale',
+
+  // Flat physicals
+  floor_area_sqm: 'Floor area (sqm)',
+  level_mid: 'Floor level (storey)',
+  storey_mid: 'Floor level (storey)',
+  room_count: 'Number of rooms',
+  lease_remaining_years: 'Remaining lease (years)',
+  remaining_lease_years: 'Remaining lease (years)',
+  age_at_sale: 'Flat age at sale',
+  lease_commence_date: 'Lease start year',
+  orientation_score: 'Unit orientation score',
+
+  // Flat type / model
+  'flat_type_2 ROOM': '2-room flat',
+  'flat_type_3 ROOM': '3-room flat',
+  'flat_type_4 ROOM': '4-room flat',
+  'flat_type_5 ROOM': '5-room flat',
+  flat_type_EXECUTIVE: 'Executive flat',
+  'flat_model_Model A': 'Flat model — Model A',
+  flat_model_Improved: 'Flat model — Improved',
+  'flat_model_Premium Apartment': 'Flat model — Premium Apartment',
+  flat_model_Standard: 'Flat model — Standard',
+  flat_model_Maisonette: 'Flat model — Maisonette',
+
+  // Location / amenities
   dist_to_cbd_km: 'Distance to CBD',
-  years_since_2000: 'Years Since 2000',
-  is_mature_estate: 'Mature Estate',
-  lat: 'Location (Latitude)',
-  lng: 'Location (Longitude)',
-  lon: 'Location (Longitude)',
-  age_at_sale: 'Flat Age at Sale',
+  dist_to_mrt_m: 'Distance to MRT',
   dist_nearest_mrt_km: 'Distance to MRT',
-  'flat_type_3 ROOM': '3-Room Flat Type',
-  'flat_type_4 ROOM': '4-Room Flat Type',
-  'flat_type_5 ROOM': '5-Room Flat Type',
-  'flat_type_2 ROOM': '2-Room Flat Type',
-  flat_type_EXECUTIVE: 'Executive Flat Type',
-  post_cooling_2022: 'Post-2022 Cooling Period',
-  post_cooling_2018: 'Post-2018 Cooling Period',
-  post_cooling_2013: 'Post-2013 Cooling Period',
-  transaction_count_block_2yr: 'Block Demand (2yr)',
-  transaction_count_per_block_last_2yr: 'Block Demand (2yr)',
-  floor_area_sqm: 'Floor Area (sqm)',
-  storey_mid: 'Floor Level',
-  remaining_lease_years: 'Remaining Lease',
-  hawker_count_1km: 'Hawker Centres Nearby',
-  dist_nearest_hawker_km: 'Distance to Hawker',
-  dist_nearest_top_school_km: 'Distance to Top School',
-  dist_nearest_primary_school_km: 'Distance to Primary School',
-  primary_schools_within_1km: 'Primary Schools (1km)',
-  primary_schools_within_2km: 'Primary Schools (2km)',
-  mrt_count_within_1km: 'MRT Stations (1km)',
-  month_num: 'Month of Sale',
-  quarter: 'Quarter of Sale',
-  interest_rate_proxy: 'Interest Rate Proxy',
-  lease_commence_date: 'Lease Start Year',
+  mrt_count_within_1km: 'MRT stations within 1km',
+  dist_to_highway_m: 'Distance to highway',
+  dist_to_nearest_mall_m: 'Distance to nearest mall',
+  mall_count_3km: 'Malls within 3km',
+  mall_weighted_access_3km: 'Mall accessibility (3km, weighted)',
+  dist_to_foodcourt_m: 'Distance to foodcourt',
+  dist_to_nearest_school_m: 'Distance to nearest school',
+  school_count_1km: 'Schools within 1km',
+  primary_school_quality_1km_weighted: 'Top schools nearby (quality-weighted)',
+  primary_school_count_1km: 'Primary schools within 1km',
+  dist_nearest_top_school_km: 'Distance to top primary school',
+  dist_nearest_primary_school_km: 'Distance to nearest primary school',
+  primary_schools_within_1km: 'Primary schools within 1km',
+  primary_schools_within_2km: 'Primary schools within 2km',
+  top_school_within_1km: 'Top school within 1km',
+  top_school_within_2km: 'Top school within 2km',
+  hawker_count_1km: 'Hawker centres within 1km',
   hawkers_within_500m: 'Hawkers within 500m',
-  top_school_within_1km: 'Top School within 1km',
-  top_school_within_2km: 'Top School within 2km'
+  dist_nearest_hawker_km: 'Distance to hawker centre',
+
+  // Macro / context
+  is_mature_estate: 'Is mature estate',
+  post_cooling_2022: 'After 2022 cooling measures',
+  post_cooling_2018: 'After 2018 cooling measures',
+  post_cooling_2013: 'After 2013 cooling measures',
+  interest_rate_proxy: 'Interest rate (proxy)',
+  transaction_count_block_2yr: 'Recent demand at block (2yr)',
+  transaction_count_per_block_last_2yr: 'Recent demand at block (2yr)',
+  lat: 'Location (latitude)',
+  lng: 'Location (longitude)',
+  lon: 'Location (longitude)'
 }
 
-// Plain-English explanations for the SHAP top-N panel (replaces the duplicate
-// ranked list — BUG-015). Each entry covers what the feature means for a typical
-// buyer/seller and roughly how the model uses it.
-const FEATURE_DESCRIPTIONS = {
-  year: 'Time trend: later years generally command higher prices due to market appreciation.',
-  floor_area_sqm: 'Larger flats carry a higher price, but the premium-per-sqm tapers past ~100 sqm.',
-  remaining_lease_years: 'Shorter leases depress price sharply once below ~60 years remaining.',
-  age_at_sale: 'Flat age at the time of sale; correlated with remaining lease.',
-  storey_mid: 'Higher floors attract a premium for view and quietness.',
-  dist_nearest_mrt_km: 'Walking distance to the nearest MRT station; closer is pricier.',
-  mrt_count_within_1km: 'More MRT stations within 1km increases connectivity value.',
-  dist_nearest_top_school_km: 'Distance to a MOE autonomous/SAP primary school.',
-  top_school_within_1km: 'Being within 1km of a top primary school is a strong positive driver.',
-  is_mature_estate: 'Mature estates have more amenities and historically trade at a premium.',
-  post_cooling_2022: 'Captures price dampening after the 2022 cooling measures.',
-  post_cooling_2018: 'Captures price dampening after the 2018 cooling measures.',
-  hawker_count_1km: 'Count of nearby hawker centres (proxy for neighbourhood amenities).',
-  primary_schools_within_1km: 'Number of primary schools within 1km.',
-  dist_nearest_primary_school_km: 'Distance to the nearest primary school.',
-  interest_rate_proxy: 'Macro borrowing cost proxy affecting buyer affordability.'
+// Friendlier label for town one-hots that we don't list explicitly.
+const prettifyFeatureLabel = (raw) => {
+  if (!raw) return raw
+  if (FEATURE_LABELS[raw]) return FEATURE_LABELS[raw]
+  if (raw.startsWith('town_')) {
+    const name = raw.slice('town_'.length).replace(/_/g, ' ').toLowerCase()
+    return `Town: ${name.replace(/\b\w/g, (c) => c.toUpperCase())}`
+  }
+  if (raw.startsWith('flat_type_')) {
+    return `Flat type — ${raw.slice('flat_type_'.length)}`
+  }
+  if (raw.startsWith('flat_model_')) {
+    return `Flat model — ${raw.slice('flat_model_'.length)}`
+  }
+  // Fallback: turn snake_case into Sentence case.
+  return raw
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c, i) => (i === 0 ? c.toUpperCase() : c.toLowerCase()))
 }
 
 const translateCondition = (cond, labels) => (labels && labels[cond]) || cond
@@ -156,18 +181,6 @@ function PriceTooltip({ active, payload, label }) {
       <div className="mb-1 font-bold">{label}</div>
       <div className="font-semibold text-emerald-600 dark:text-emerald-400">
         Median: S${Number(payload[0].value).toLocaleString()}
-      </div>
-    </div>
-  )
-}
-
-function ShapTooltip({ active, payload }) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="rounded-xl border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
-      <div className="mb-1 font-bold">{payload[0].payload.label}</div>
-      <div className="font-semibold text-emerald-600 dark:text-emerald-400">
-        Avg impact: S${Math.round(payload[0].value).toLocaleString()}
       </div>
     </div>
   )
@@ -349,23 +362,22 @@ export default function AnalysisView() {
   const shapData = shap
     ? Object.entries(shap.shap_importance)
         .sort(([, a], [, b]) => b - a)
-        .slice(0, 12)
+        .slice(0, 10)
         .map(([feature, value]) => ({
           feature,
-          label: FEATURE_LABELS[feature] || feature,
+          label: prettifyFeatureLabel(feature),
           value: Math.round(value)
         }))
-        .reverse()
     : []
 
-  const shapTopForDescriptions = shap
-    ? Object.entries(shap.shap_importance)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 6)
-        .map(([feature]) => feature)
-    : []
+  const shapTotal = shapData.reduce((s, d) => s + d.value, 0)
+  const shapMax = shapData[0]?.value || 1
 
   const availableClusters = shap?.available_clusters ?? []
+  const clusterProfiles = shap?.cluster_profiles || {}
+  const activeProfile =
+    shap?.active_cluster_profile ||
+    (shapCluster ? clusterProfiles[String(shapCluster)] : null)
 
   const formatSGDCompact = (v) => {
     const n = Number(v) || 0
@@ -429,7 +441,7 @@ export default function AnalysisView() {
       : '📊 Price Trend'
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 px-1">
+    <div className="w-full space-y-5 px-1">
       {/* ══ SECTION 1 — STAT CARDS ══════════════════════════════════════ */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {modelStats.map((s) => (
@@ -532,6 +544,20 @@ export default function AnalysisView() {
             <CardDescription>
               Features ranked by average impact on predicted price (SHAP values)
             </CardDescription>
+            {activeProfile && (
+              <div className="mt-2 rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 text-[11px] text-foreground/90">
+                <span className="font-semibold">
+                  Cluster {shapCluster}: {activeProfile.label}
+                </span>{' '}
+                <span className="text-muted-foreground">— {activeProfile.summary}</span>
+                {activeProfile.top_towns?.length > 0 && (
+                  <span className="text-muted-foreground">
+                    {' '}
+                    · top towns: {activeProfile.top_towns.slice(0, 3).join(', ')}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -539,16 +565,41 @@ export default function AnalysisView() {
               onValueChange={(v) => handleClusterChange(v === 'OVERALL' ? '' : v)}
               disabled={!shap || !availableClusters.length}
             >
-              <SelectTrigger className="h-8 w-[150px] text-xs">
+              <SelectTrigger className="h-8 w-[260px] text-xs">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="OVERALL">Overall</SelectItem>
-                {availableClusters.map((k) => (
-                  <SelectItem key={k} value={String(k)}>
-                    Cluster {k}
-                  </SelectItem>
-                ))}
+              <SelectContent className="max-w-[420px]">
+                <SelectItem value="OVERALL">
+                  <div className="flex flex-col gap-0.5 py-0.5">
+                    <span className="text-xs font-semibold">Overall (all flats)</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Combined SHAP across every cluster
+                    </span>
+                  </div>
+                </SelectItem>
+                {availableClusters.map((k) => {
+                  const p = clusterProfiles[String(k)]
+                  return (
+                    <SelectItem key={k} value={String(k)}>
+                      <div className="flex flex-col gap-0.5 py-0.5">
+                        <span className="text-xs font-semibold">
+                          Cluster {k}
+                          {p?.label ? ` — ${p.label}` : ''}
+                        </span>
+                        {p?.summary && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {p.summary}
+                          </span>
+                        )}
+                        {p?.top_towns?.length > 0 && (
+                          <span className="text-[11px] text-muted-foreground">
+                            Top towns: {p.top_towns.slice(0, 3).join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
             {shap?.base_value != null && (
@@ -561,60 +612,68 @@ export default function AnalysisView() {
           {!shap ? (
             <LoadingSpinner label="Loading feature importance..." />
           ) : (
-            <div className="relative grid grid-cols-1 gap-4 lg:grid-cols-[1.5fr_1fr]">
+            <div className="relative">
               {shapLoading && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60 backdrop-blur-sm">
                   <LoadingSpinner label="Updating cluster..." />
                 </div>
               )}
-              <div>
-                <ResponsiveContainer width="100%" height={shapData.length * 34 + 20}>
-                  <BarChart
-                    data={shapData}
-                    layout="vertical"
-                    margin={{ top: 0, right: 60, bottom: 0, left: 140 }}
-                  >
-                    <XAxis
-                      type="number"
-                      tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                      tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="label"
-                      width={136}
-                      tick={{ fontSize: 12, fill: 'var(--foreground)', fontWeight: 500 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip content={<ShapTooltip />} />
-                    <Bar dataKey="value" fill="#22c55e" radius={[0, 4, 4, 0]} maxBarSize={22} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="rounded-xl border border-border bg-muted/30 p-4">
-                <div className="text-sm font-bold text-foreground">What these features mean</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Plain-English reading of the top drivers above.
-                </div>
-                <div className="mt-3 flex flex-col gap-3">
-                  {shapTopForDescriptions.map((feat, i) => (
-                    <div key={feat} className="flex gap-2">
-                      <div className="w-5 shrink-0 text-xs font-bold text-muted-foreground">{i + 1}</div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-semibold text-foreground">
-                          {FEATURE_LABELS[feat] || feat}
-                        </div>
-                        <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                          {FEATURE_DESCRIPTIONS[feat] ||
-                            'A numeric feature used by the model; see the chart for its average impact.'}
+              <div className="flex flex-col gap-1.5">
+                {shapData.map((d, i) => {
+                  const pct = (d.value / shapMax) * 100
+                  const share = shapTotal ? (d.value / shapTotal) * 100 : 0
+                  const isTop = i < 3
+                  return (
+                    <div
+                      key={d.feature}
+                      className="group flex items-center gap-3 rounded-md px-1.5 py-1 transition-colors hover:bg-muted/40"
+                    >
+                      <div className="w-6 shrink-0 text-right text-[11px] font-bold tabular-nums text-muted-foreground">
+                        {i + 1}
+                      </div>
+                      <div
+                        className="w-36 shrink-0 truncate text-[12px] font-medium text-foreground"
+                        title={d.label}
+                      >
+                        {d.label}
+                      </div>
+                      <div className="relative h-6 flex-1 overflow-hidden rounded-md bg-muted/30 ring-1 ring-inset ring-border/40">
+                        <div
+                          className={`absolute inset-y-0 left-0 rounded-md shadow-sm transition-all ${
+                            isTop
+                              ? 'bg-gradient-to-r from-emerald-500 to-emerald-600'
+                              : 'bg-gradient-to-r from-emerald-300 to-emerald-500 dark:from-emerald-500/70 dark:to-emerald-600/80'
+                          }`}
+                          style={{ width: `${Math.max(pct, 2)}%` }}
+                        />
+                        <div className="relative flex h-full items-center justify-between px-2">
+                          <span className="text-[10.5px] font-semibold text-white drop-shadow-sm">
+                            {pct >= 18 ? formatSGDCompact(d.value) : ''}
+                          </span>
+                          <span className="text-[10.5px] font-semibold text-foreground/80">
+                            {pct < 18 ? formatSGDCompact(d.value) : `${share.toFixed(1)}%`}
+                          </span>
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )
+                })}
+                <div className="mt-2 flex flex-col gap-0.5 border-t border-border/60 pt-2 text-[10.5px] text-muted-foreground">
+                  <div className="flex items-center justify-between">
+                    <span>Avg |SHAP| · top {shapData.length} features</span>
+                    <span className="tabular-nums">
+                      Combined ≈ {formatSGDCompact(shapTotal)}
+                    </span>
+                  </div>
+                  {shap?.method?.includes('Composite') && (
+                    <div className="text-[10px] italic text-muted-foreground/80">
+                      Tree-only attribution; Ridge component
+                      {shap.ridge_gap_pct_of_pred != null
+                        ? ` (~${(shap.ridge_gap_pct_of_pred * 100).toFixed(1)}% of signal)`
+                        : ' (~5–7% of signal)'}{' '}
+                      is not shown.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
