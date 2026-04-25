@@ -7,11 +7,12 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  ResponsiveContainer,
-  ReferenceLine
+  ResponsiveContainer
 } from 'recharts'
 import { api, getModelMeta } from '../api/client.js'
 import MarketHeatMap from '../components/MarketHeatMap.jsx'
+import ShortlistQuickGlance from '../components/ShortlistQuickGlance.jsx'
+import RecentTransactionsFeed from '../components/RecentTransactionsFeed.jsx'
 
 const toTitle = (str) =>
   str
@@ -26,85 +27,57 @@ const getTier = (price) => {
   return { dot: '#3b82f6' }
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-  delta,
-  deltaUp,
-  neutralDelta,
-  sub,
-  loading
-}) {
-  const [hovered, setHovered] = useState(false)
-  const deltaColor = neutralDelta
-    ? 'var(--muted-foreground)'
-    : deltaUp
-      ? 'oklch(0.72 0.17 145)'
-      : 'oklch(0.65 0.2 25)'
-  const arrow = neutralDelta ? '→' : deltaUp ? '↑' : '↓'
+function StatCard({ label, value, sub, loading }) {
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       style={{
-        background: 'var(--bg-card)',
+        background: 'var(--card)',
         borderRadius: 12,
-        padding: '20px 22px',
-        border: '1px solid var(--border)',
-        borderLeft: '4px solid var(--green-500)',
-        boxShadow: hovered
-          ? '0 4px 20px oklch(0 0 0 / 0.25)'
-          : '0 1px 0 oklch(1 0 0 / 0.06) inset',
-        transition: 'box-shadow 0.18s ease',
-        cursor: 'default'
+        padding: 14,
+        border: '1px solid var(--border)'
       }}
     >
       <div
         style={{
-          fontSize: '11px',
+          fontSize: 10,
           color: 'var(--text-muted)',
           fontWeight: 600,
           letterSpacing: '0.06em',
           textTransform: 'uppercase',
-          marginBottom: '12px'
+          marginBottom: 6
         }}
       >
-        {icon}&nbsp;{label}
+        {label}
       </div>
       {loading ? (
         <div
           style={{
-            height: '28px',
+            height: 22,
             background: 'var(--muted)',
-            borderRadius: '6px',
-            marginBottom: '8px'
+            borderRadius: 6,
+            marginBottom: 4
           }}
         />
       ) : (
         <div
           style={{
-            fontSize: '26px',
-            fontWeight: 800,
+            fontFamily:
+              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+            fontSize: 18,
+            fontWeight: 600,
+            fontVariantNumeric: 'tabular-nums',
             color: 'var(--foreground)',
-            lineHeight: 1,
-            marginBottom: '8px'
+            lineHeight: 1.2,
+            marginBottom: 4,
+            overflowWrap: 'anywhere'
           }}
         >
-          {value}
+          {value ?? '—'}
         </div>
       )}
-      <div
-        style={{
-          fontSize: '12px',
-          fontWeight: 600,
-          color: deltaColor,
-          marginBottom: '4px'
-        }}
-      >
-        {loading ? '—' : `${arrow} ${delta}`}
-      </div>
-      <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{sub}</div>
+      {sub ? (
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{sub}</div>
+      ) : null}
     </div>
   )
 }
@@ -249,7 +222,7 @@ function MoverCard({ t, hot }) {
         border: '1px solid var(--border)'
       }}
     >
-      <div style={{ minWidth: 0 }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span
             style={{
@@ -269,7 +242,10 @@ function MoverCard({ t, hot }) {
             style={{
               fontSize: 14,
               fontWeight: 600,
-              color: 'var(--text-primary)'
+              color: 'var(--text-primary)',
+              minWidth: 0,
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word'
             }}
           >
             {toTitle(t.town)}
@@ -406,10 +382,28 @@ export default function DashboardView() {
     })()
   }, [])
 
-  const nationalCur = trendData.find((d) => d.year === summaryYear)
-  const nationalPrev = trendData.find((d) => d.year === summaryYear - 1)
-  const nationalNext = trendData.find((d) => d.year === summaryYear + 1)
-  const nationalMedian = nationalNext?.median_price ?? nationalCur?.median_price
+  // Treat a year as partial/YTD when its transaction count is < 60% of the
+  // prior year — comparing a YTD median against a full year is misleading, so
+  // the headline KPI + YoY are computed off the last complete year.
+  const partialYears = new Set()
+  for (let i = 1; i < trendData.length; i++) {
+    const cur = trendData[i]
+    const prev = trendData[i - 1]
+    if (
+      cur?.transaction_count != null &&
+      prev?.transaction_count > 0 &&
+      cur.transaction_count < prev.transaction_count * 0.6
+    ) {
+      partialYears.add(cur.year)
+    }
+  }
+  const latestCompleteYear = [...trendData]
+    .map((d) => d.year)
+    .filter((y) => !partialYears.has(y))
+    .sort((a, b) => b - a)[0]
+  const nationalCur = trendData.find((d) => d.year === latestCompleteYear)
+  const nationalPrev = trendData.find((d) => d.year === latestCompleteYear - 1)
+  const nationalMedian = nationalCur?.median_price
   const yoyGrowth =
     nationalCur && nationalPrev
       ? (
@@ -418,13 +412,6 @@ export default function DashboardView() {
           100
         ).toFixed(1)
       : null
-  const yoyAbsolute =
-    nationalCur && nationalPrev
-      ? Math.round(
-          (nationalCur.median_price - nationalPrev.median_price) / 1000
-        )
-      : null
-
   const hottestTown = townStats.length
     ? townStats.reduce((a, b) => ((a.txn_current || 0) > (b.txn_current || 0) ? a : b))
     : null
@@ -584,61 +571,43 @@ export default function DashboardView() {
       >
         <StatCard
           loading={loading}
-          icon="🏘️"
-          label="Median Resale Price This Year"
+          label={`Median resale price · ${latestCompleteYear ?? summaryYear}`}
           value={
-            nationalMedian
-              ? `S$${(nationalMedian / 1000).toFixed(0)}k`
-              : '—'
+            nationalMedian ? `S$${(nationalMedian / 1000).toFixed(0)}k` : '—'
           }
-          delta={yoyGrowth ? `+${yoyGrowth}% vs ${summaryYear - 1}` : '—'}
-          deltaUp
-          sub="Typical selling price across Singapore"
+          sub={
+            yoyGrowth != null && latestCompleteYear
+              ? `${Number(yoyGrowth) >= 0 ? '+' : ''}${yoyGrowth}% vs ${latestCompleteYear - 1}`
+              : 'National median'
+          }
         />
         <StatCard
           loading={loading}
-          icon="📈"
-          label="Price Growth vs Last Year"
-          value={yoyGrowth ? `+${yoyGrowth}%` : '—'}
-          delta={
-            yoyAbsolute ? `S$${yoyAbsolute}k increase` : '—'
+          label={`Flats resold · ${summaryYear}${partialYears.has(summaryYear) ? ' (YTD)' : ''}`}
+          value={totalTxns ? totalTxns.toLocaleString() : '—'}
+          sub={
+            partialYears.has(summaryYear)
+              ? 'Year-to-date resale transactions'
+              : 'Total resale transactions nationwide'
           }
-          deltaUp
-          sub={`How much prices rose from ${summaryYear - 1} to ${summaryYear}`}
         />
         <StatCard
           loading={loading}
-          icon="🔥"
-          label="Busiest Town (Most Sales)"
-          value={
-            hottestTown ? toTitle(hottestTown.town) : '—'
-          }
-          delta={
+          label="Busiest town"
+          value={hottestTown ? toTitle(hottestTown.town) : '—'}
+          sub={
             hottestTown
-              ? `${(hottestTown.txn_current || 0).toLocaleString()} flats sold`
+              ? `${(hottestTown.txn_current || 0).toLocaleString()} flats sold in ${summaryYear}`
               : '—'
           }
-          neutralDelta
-          sub={`Most flats sold in ${summaryYear}`}
         />
         <StatCard
           loading={loading}
-          icon="💎"
-          label="Most Affordable Town"
-          value={
-            bestValueTown ? toTitle(bestValueTown.town) : '—'
-          }
-          delta={
-            bestValueTown
-              ? `S$${(
-                  bestValueTown.price_current / 1000
-                ).toFixed(0)}k median`
-              : '—'
-          }
-          neutralDelta
+          label="Most affordable town"
+          value={bestValueTown ? toTitle(bestValueTown.town) : '—'}
           sub={
             bestValueTown
-              ? `+${bestValueTown.yoy_pct}% price growth · Lowest median price`
+              ? `S$${(bestValueTown.price_current / 1000).toFixed(0)}k median`
               : '—'
           }
         />
@@ -682,23 +651,10 @@ export default function DashboardView() {
                 }}
               >
                 National median resale price · Yearly
+                {partialYears.size > 0
+                  ? ' · dashed marker = year-to-date (partial)'
+                  : ''}
               </p>
-            </div>
-            <div
-              style={{
-                background: 'oklch(0.78 0.14 65 / 0.2)',
-                color: 'oklch(0.88 0.12 65)',
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                padding: '5px 10px',
-                borderRadius: 999,
-                border: '1px solid oklch(0.78 0.14 65 / 0.35)',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              2022 cooling
             </div>
           </div>
           {loading ? (
@@ -749,6 +705,9 @@ export default function DashboardView() {
                   tick={{ fontSize: 12, fill: 'oklch(0.55 0.02 260)' }}
                   axisLine={false}
                   tickLine={false}
+                  tickFormatter={(y) =>
+                    partialYears.has(y) ? `${y} YTD` : String(y)
+                  }
                 />
                 <YAxis
                   tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
@@ -759,23 +718,27 @@ export default function DashboardView() {
                   width={52}
                 />
                 <Tooltip content={<PriceTooltip />} />
-                <ReferenceLine
-                  x={2022}
-                  stroke="#f59e0b"
-                  strokeDasharray="5 4"
-                  strokeWidth={1.8}
-                />
                 <Area
                   type="monotone"
                   dataKey="median_price"
                   stroke="#16a34a"
                   strokeWidth={2.5}
                   fill="url(#priceGrad)"
-                  dot={{
-                    fill: '#22c55e',
-                    stroke: '#16a34a',
-                    strokeWidth: 2,
-                    r: 4
+                  dot={(props) => {
+                    const { cx, cy, payload, key } = props
+                    const ytd = partialYears.has(payload?.year)
+                    return (
+                      <circle
+                        key={key}
+                        cx={cx}
+                        cy={cy}
+                        r={4}
+                        fill={ytd ? '#ffffff' : '#22c55e'}
+                        stroke={ytd ? '#9ca3af' : '#16a34a'}
+                        strokeWidth={2}
+                        strokeDasharray={ytd ? '2 2' : undefined}
+                      />
+                    )
                   }}
                   activeDot={{
                     r: 6,
@@ -1007,39 +970,14 @@ export default function DashboardView() {
                 </div>
                 <div
                   style={{
-                    overflowX: 'auto',
-                    overflowY: 'hidden',
-                    width: '100%',
-                    minWidth: 0,
-                    paddingBottom: 8,
-                    WebkitOverflowScrolling: 'touch',
-                    scrollbarWidth: 'thin',
-                    scrollbarColor: 'var(--border) transparent'
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                    gap: '10px'
                   }}
                 >
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'nowrap',
-                      gap: '10px',
-                      width: 'max-content',
-                      maxWidth: 'none'
-                    }}
-                  >
-                    {risingTowns.map((t) => (
-                      <div
-                        key={t.town}
-                        style={{
-                          flex: '0 0 auto',
-                          width: 280,
-                          minWidth: 280,
-                          maxWidth: 'min(280px, 92vw)'
-                        }}
-                      >
-                        <MoverCard t={t} hot />
-                      </div>
-                    ))}
-                  </div>
+                  {risingTowns.map((t) => (
+                    <MoverCard key={t.town} t={t} hot />
+                  ))}
                 </div>
               </div>
 
@@ -1074,39 +1012,14 @@ export default function DashboardView() {
                 </div>
                 <div
                   style={{
-                    overflowX: 'auto',
-                    overflowY: 'hidden',
-                    width: '100%',
-                    minWidth: 0,
-                    paddingBottom: 8,
-                    WebkitOverflowScrolling: 'touch',
-                    scrollbarWidth: 'thin',
-                    scrollbarColor: 'var(--border) transparent'
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                    gap: '10px'
                   }}
                 >
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'nowrap',
-                      gap: '10px',
-                      width: 'max-content',
-                      maxWidth: 'none'
-                    }}
-                  >
-                    {coolingDisplay.map((t) => (
-                      <div
-                        key={t.town}
-                        style={{
-                          flex: '0 0 auto',
-                          width: 280,
-                          minWidth: 280,
-                          maxWidth: 'min(280px, 92vw)'
-                        }}
-                      >
-                        <MoverCard t={t} hot={false} />
-                      </div>
-                    ))}
-                  </div>
+                  {coolingDisplay.map((t) => (
+                    <MoverCard key={t.town} t={t} hot={false} />
+                  ))}
                 </div>
               </div>
             </div>
@@ -1133,13 +1046,27 @@ export default function DashboardView() {
               <div
                 style={{
                   width: '100%',
-                  height: '320px',
+                  height: '460px',
                   borderRadius: '12px',
                   overflow: 'hidden'
                 }}
               >
                 <MarketHeatMap townStats={townStats} />
               </div>
+            </div>
+
+            <div
+              style={{
+                borderTop: '1px solid var(--border)',
+                paddingTop: 16,
+                marginTop: 8,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gap: 16
+              }}
+            >
+              <ShortlistQuickGlance />
+              <RecentTransactionsFeed />
             </div>
           </>
         )}

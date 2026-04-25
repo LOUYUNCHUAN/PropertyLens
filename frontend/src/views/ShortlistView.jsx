@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ShortlistMapView from '../components/ShortlistMapView.jsx'
+import ShortlistVersusView from '../components/ShortlistVersusView.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
   listWishlistItems,
   getWishlistItem,
   deleteWishlistItem,
   validateListing,
-  nlSearchShortlist
+  nlSearchShortlist,
+  getCBR
 } from '../api/client.js'
 import {
   wishlistDetailToSnapshot,
@@ -24,7 +26,8 @@ import {
   snapshotsReadyForPersonas,
   personaHighlightColumn
 } from '../lib/shortlistPersonaUtils.js'
-import { Home, LayoutGrid, Map as MapIcon, Puzzle, Search, X } from 'lucide-react'
+import NlPlanChips, { unknownTagsById, UNKNOWN_LABEL } from '../components/NlPlanChips.jsx'
+import { Home, LayoutGrid, Map as MapIcon, Puzzle, RotateCw, Search, X } from 'lucide-react'
 import SHAPChart from '../components/SHAPChart.jsx'
 import LocationMap from '../components/LocationMap.jsx'
 import CBRTable from '../components/CBRTable.jsx'
@@ -155,7 +158,7 @@ function ConfirmDialog({ open, title, description, confirmLabel, onConfirm, onCa
   if (!open) return null
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/55 p-4"
+      className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/55 p-4"
       role="alertdialog"
       aria-modal="true"
       aria-labelledby="confirm-title"
@@ -185,6 +188,8 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
   const [err, setErr] = useState(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [removeError, setRemoveError] = useState(null)
+  const [refreshedCbr, setRefreshedCbr] = useState(null)
+  const [refreshState, setRefreshState] = useState('idle')   // 'idle' | 'loading' | 'error'
 
   useEffect(() => {
     if (!itemId || !username) return
@@ -193,11 +198,45 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
       .catch((e) => setErr(e?.message || 'Failed to load'))
   }, [itemId, username])
 
+  // Reset overlay refresh state when switching to a different shortlist row.
+  useEffect(() => {
+    setRefreshedCbr(null)
+    setRefreshState('idle')
+  }, [itemId])
+
+  // Detect snapshots saved before the CBR parquet fix: pre-fix rows have
+  // empty town and lease=0, or transaction year ≤ 2023 (parquet was capped).
+  // Hook called unconditionally — must precede the early-return below.
+  const cbrSnapshotRows = detail?.cbr_snapshot_json || []
+  const cbrSnapshotStale = useMemo(() => {
+    if (!cbrSnapshotRows.length) return false
+    const hasEmptyTown = cbrSnapshotRows.some(
+      (c) => !c.town || String(c.town).trim() === ''
+    )
+    const allOld = cbrSnapshotRows.every(
+      (c) => Number(c.year) > 0 && Number(c.year) <= 2023
+    )
+    return hasEmptyTown || allOld
+  }, [cbrSnapshotRows])
+
+  const handleRefreshCbr = useCallback(async () => {
+    if (!detail?.payload_json || refreshState === 'loading') return
+    setRefreshState('loading')
+    try {
+      const resp = await getCBR(detail.payload_json, 5)
+      setRefreshedCbr(resp?.comparables || [])
+      setRefreshState('idle')
+    } catch {
+      setRefreshState('error')
+    }
+  }, [detail?.payload_json, refreshState])
+
   if (!itemId) return null
 
   const p = detail?.payload_json || {}
   const mapSnap = detail?.map_snapshot_json || {}
   const predSnap = detail?.prediction_snapshot_json || {}
+  const cbrComparables = refreshedCbr ?? cbrSnapshotRows
 
   const handleAnalyseAsSeller = () => {
     if (!detail) return
@@ -215,7 +254,7 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4"
+      className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/55 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="shortlist-modal-title"
@@ -344,10 +383,42 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
               </div>
 
               <div className="rounded-xl border border-border bg-card p-4">
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Similar past sales
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Similar past sales
+                  </div>
+                  {refreshedCbr && (
+                    <span className="text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                      Live · refreshed
+                    </span>
+                  )}
                 </div>
-                <CBRTable comparables={detail.cbr_snapshot_json || []} />
+                {cbrSnapshotStale && !refreshedCbr && (
+                  <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    <span className="flex-1">
+                      Stale snapshot — saved before the CBR data was refreshed. Town and lease may be missing.
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRefreshCbr}
+                      disabled={refreshState === 'loading'}
+                    >
+                      <RotateCw
+                        className={`mr-1 h-3 w-3 ${refreshState === 'loading' ? 'animate-spin' : ''}`}
+                        aria-hidden
+                      />
+                      {refreshState === 'loading' ? 'Refreshing…' : 'Refresh'}
+                    </Button>
+                  </div>
+                )}
+                {refreshState === 'error' && (
+                  <div className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+                    Couldn't refresh comparables — try again.
+                  </div>
+                )}
+                <CBRTable comparables={cbrComparables} />
               </div>
 
               {removeError && (
@@ -419,6 +490,7 @@ export default function ShortlistView() {
   const [nlQuery, setNlQuery] = useState('')
   const [nlSortedIds, setNlSortedIds] = useState(null)
   const [nlPlan, setNlPlan] = useState(null)
+  const [nlRowNotes, setNlRowNotes] = useState([])
   const [nlOllamaErr, setNlOllamaErr] = useState(null)
   const [nlLoading, setNlLoading] = useState(false)
   /** Optional overrides (meters); empty string = let server / model choose defaults. */
@@ -622,27 +694,6 @@ export default function ShortlistView() {
     setMapSelectedIds(new Set())
   }, [])
 
-  const headerSubtitle = useMemo(() => {
-    const n = rows.length
-    const countStr = `${n} listing${n === 1 ? '' : 's'}`
-    if (nlSortedIds != null) {
-      const m = nlSortedIds.length
-      return `${countStr} · NL search: ${m} match${m === 1 ? '' : 'es'}`
-    }
-    if (activePersona && snapshotsReady) {
-      const sl = PERSONAS.find((p) => p.id === activePersona)?.sortLabel
-      return `${countStr} · ${sl || 'Persona ranking'}`
-    }
-    const labels = {
-      address: 'Address',
-      listing: 'Listing price',
-      model: 'Model estimate',
-      gap: 'vs model',
-      smartScore: 'Smart Score'
-    }
-    return `${countStr} · sorted by ${labels[sortColumn]} (${sortDir === 'asc' ? 'asc' : 'desc'})`
-  }, [rows.length, nlSortedIds, activePersona, snapshotsReady, sortColumn, sortDir])
-
   const handleNlSearch = useCallback(async () => {
     const q = nlQuery.trim()
     if (!q) return
@@ -659,11 +710,20 @@ export default function ShortlistView() {
       const res = await nlSearchShortlist(u, q, 80, opts)
       setNlSortedIds(res.sorted_ids || [])
       setNlPlan(res.filters_applied || null)
+      setNlRowNotes(Array.isArray(res.row_notes) ? res.row_notes : [])
       setNlOllamaErr(res.ollama_error || null)
       setActivePersona(CUSTOM_PERSONA_ID)
-    } catch {
-      setNlOllamaErr('Search failed. Is the backend running?')
+    } catch (err) {
+      const code = err?.response?.status
+      if (code >= 500) {
+        setNlOllamaErr('Search failed (server error). Try again.')
+      } else if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+        setNlOllamaErr('Search timed out. The parser may be slow — try a simpler query.')
+      } else {
+        setNlOllamaErr('Search failed. Is the backend running?')
+      }
       setNlSortedIds([])
+      setNlRowNotes([])
     } finally {
       setNlLoading(false)
     }
@@ -672,8 +732,11 @@ export default function ShortlistView() {
   const clearNlSearch = useCallback(() => {
     setNlSortedIds(null)
     setNlPlan(null)
+    setNlRowNotes([])
     setNlOllamaErr(null)
   }, [])
+
+  const nlUnknownById = useMemo(() => unknownTagsById(nlRowNotes), [nlRowNotes])
 
   const onSortHeader = useCallback(
     (col) => {
@@ -816,16 +879,9 @@ export default function ShortlistView() {
           </p>
         </div>
         {nlOllamaErr ? (
-          <p className="text-[11px] text-amber-800 dark:text-amber-200">
-            Parsed with keyword fallback (Ollama unavailable: {nlOllamaErr.slice(0, 160)}
-            {nlOllamaErr.length > 160 ? '…' : ''})
-          </p>
+          <p className="text-[11px] text-amber-800 dark:text-amber-200">{nlOllamaErr}</p>
         ) : null}
-        {nlPlan != null ? (
-          <p className="break-all font-mono text-[10px] text-muted-foreground">
-            {JSON.stringify(nlPlan)}
-          </p>
-        ) : null}
+        {nlPlan != null ? <NlPlanChips plan={nlPlan} notes={nlRowNotes} /> : null}
       </div>
     ) : null
 
@@ -847,11 +903,7 @@ export default function ShortlistView() {
         </Card>
       ) : (
         <>
-          <header className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight text-foreground">Shortlist</h1>
-              <p className="mt-0.5 text-[13px] text-muted-foreground">{headerSubtitle}</p>
-            </div>
+          <header className="flex flex-wrap items-start justify-end gap-4">
             <div
               className="inline-flex rounded-full bg-muted p-1"
               role="tablist"
@@ -1086,6 +1138,8 @@ export default function ShortlistView() {
                             ? getPersonaTag(activePersona, snapshotsById[row.id])
                             : null
                         const tagLineCls = personaVariant(activePersona).tagText
+                        const unknownTags =
+                          activePersona === CUSTOM_PERSONA_ID ? nlUnknownById[row.id] : null
                         const topAccent =
                           idx === 0 &&
                           snapshotsReady &&
@@ -1133,6 +1187,19 @@ export default function ShortlistView() {
                               {personaTag ? (
                                 <span className={`mt-0.5 block text-xs font-medium ${tagLineCls}`}>
                                   {personaTag}
+                                </span>
+                              ) : null}
+                              {unknownTags && unknownTags.length > 0 ? (
+                                <span className="mt-1 inline-flex flex-wrap gap-1">
+                                  {unknownTags.slice(0, 3).map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className="inline-flex items-center gap-0.5 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200"
+                                      title="Data missing for this filter — ranked last instead of dropped"
+                                    >
+                                      ⚠ {UNKNOWN_LABEL[tag] || tag}
+                                    </span>
+                                  ))}
                                 </span>
                               ) : null}
                             </td>
@@ -1241,27 +1308,27 @@ export default function ShortlistView() {
                     {customFilterPanel ? (
                       <div className="border-b border-border px-4 pb-4">{customFilterPanel}</div>
                     ) : null}
+
+                    <div className="px-4">
+                      <ShortlistVersusView
+                        rows={mapRowsForView}
+                        smartScores={smartScores}
+                        snapshotsById={snapshotsById}
+                        geocodeById={geocodeById}
+                        nearbyById={nearbyById}
+                        gapPct={gapPct}
+                        onOpenListing={setSelectedId}
+                      />
+                      {noGeocodeCount > 0 ? (
+                        <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
+                          {noGeocodeCount} listing(s) have no saved address pin. Save from Buyer or the extension with block and street so geocode and amenities are stored.
+                        </p>
+                      ) : null}
+                    </div>
+                    {/* Pin-map sub-view removed — Versus is the only map layout now. */}
+                    {false && (
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
                     <aside className="w-full shrink-0 space-y-3 rounded-xl border border-border bg-card p-3 lg:max-h-[560px] lg:w-72 lg:overflow-y-auto">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className="text-[11px] font-medium text-primary underline decoration-primary/50 hover:text-primary/80"
-                          onClick={selectAllMapPins}
-                        >
-                          Select all with pin
-                        </button>
-                        <button
-                          type="button"
-                          className="text-[11px] font-medium text-muted-foreground underline hover:text-foreground"
-                          onClick={clearMapPins}
-                        >
-                          Clear
-                        </button>
-                      </div>
-                      <p className="text-[11px] leading-snug text-muted-foreground">
-                        Checked listings show a numbered pin and merge amenities (deduplicated, capped) into the map. Default category is All.
-                      </p>
                       <ul className="space-y-2.5">
                         {mapRowsForView.map((row) => {
                           const hasPin = geocodeById[row.id]?.found
@@ -1311,6 +1378,7 @@ export default function ShortlistView() {
                       ) : null}
                     </div>
                   </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -64,11 +64,33 @@ export function ChatMarkdown({ text }) {
       }}
     >
       {paragraphs.map((para, idx) => {
-        const lines = para.split('\n')
-        const bulletLines = lines.filter((l) => l.trim().startsWith('- '))
-        const hasBullets = bulletLines.length > 0
+        const trimmed = String(para || '').trim()
+        const lines = trimmed.split('\n').filter((l) => l.trim() !== '')
 
-        if (hasBullets) {
+        // Headings: support # / ## / ### (common in LLM replies)
+        const h3 = /^###\s+(.*)$/.exec(trimmed)
+        const h2 = /^##\s+(.*)$/.exec(trimmed)
+        const h1 = /^#\s+(.*)$/.exec(trimmed)
+        if (h3 || h2 || h1) {
+          const content = (h3?.[1] || h2?.[1] || h1?.[1] || '').trim()
+          const Tag = h1 ? 'h2' : h2 ? 'h3' : 'h4'
+          return (
+            <Tag
+              key={idx}
+              style={{
+                margin: idx === 0 ? 0 : '0.5rem 0 0',
+                fontSize: h1 ? '1.0em' : h2 ? '0.95em' : '0.92em',
+                fontWeight: 700
+              }}
+            >
+              {renderInline(content)}
+            </Tag>
+          )
+        }
+
+        // Unordered list: - item OR * item
+        const ulLines = lines.filter((l) => /^\s*[-*]\s+/.test(l))
+        if (ulLines.length > 0) {
           return (
             <ul
               key={idx}
@@ -77,12 +99,32 @@ export function ChatMarkdown({ text }) {
                 margin: idx > 0 ? '0.35rem 0 0' : 0
               }}
             >
-              {bulletLines.map((l, i) => (
+              {ulLines.map((l, i) => (
                 <li key={i} style={{ fontSize: '0.9em' }}>
-                  {renderInline(l.replace(/^-+\s*/, ''))}
+                  {renderInline(l.replace(/^\s*[-*]\s+/, ''))}
                 </li>
               ))}
             </ul>
+          )
+        }
+
+        // Ordered list: 1. item
+        const olLines = lines.filter((l) => /^\s*\d+\.\s+/.test(l))
+        if (olLines.length > 0) {
+          return (
+            <ol
+              key={idx}
+              style={{
+                paddingLeft: '1.25rem',
+                margin: idx > 0 ? '0.35rem 0 0' : 0
+              }}
+            >
+              {olLines.map((l, i) => (
+                <li key={i} style={{ fontSize: '0.9em' }}>
+                  {renderInline(l.replace(/^\s*\d+\.\s+/, ''))}
+                </li>
+              ))}
+            </ol>
           )
         }
 
@@ -96,7 +138,7 @@ export function ChatMarkdown({ text }) {
               maxWidth: '100%'
             }}
           >
-            {renderInline(para)}
+            {renderInline(trimmed)}
           </p>
         )
       })}

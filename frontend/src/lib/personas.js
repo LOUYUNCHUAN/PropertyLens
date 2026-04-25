@@ -104,7 +104,8 @@ export function commuterTag(snap) {
   const dm = Math.round(Number(nearest.dist_m) || 0)
   const walkMin = Math.round(dm / 75)
   const name = String(nearest.name || 'MRT')
-  return `${name} · ${dm}m · ~${walkMin} min walk`
+  const within1km = mrts.filter((s) => (Number(s.dist_m) || 0) <= 1000).length
+  return `${name} · ${dm}m · ~${walkMin} min · ${within1km} in 1km`
 }
 
 export function investorScore(snap) {

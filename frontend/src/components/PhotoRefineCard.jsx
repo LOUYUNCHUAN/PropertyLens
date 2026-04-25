@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { adjustPriceWithPhoto } from '@/api/client.js'
 import LoadingSpinner from './LoadingSpinner.jsx'
-import IRSTag from './IRSTag.jsx'
 
 const TIER_COLORS = {
   Excellent: { bg: '#e6f7ec', fg: '#0f6b3c' },
@@ -77,14 +76,24 @@ export default function PhotoRefineCard({ basePrice, onResult }) {
   const scorePct = Math.max(0, Math.min(100, (result?.condition_score ?? 0) * 10))
 
   return (
-    <div className="card" style={{ padding: '24px' }}>
-      <div className="section-label" style={{ marginBottom: '8px' }}>
-        Refine with a photo
-        <IRSTag type="Model-Based" />
+    <div
+      className="card"
+      style={{
+        padding: '24px',
+        borderLeft: '4px solid #10b981',
+        background: 'linear-gradient(180deg, #ecfdf5 0%, var(--bg-card, #ffffff) 60%)'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '8px' }}>
+        <span style={{ fontSize: 20 }} aria-hidden>📸</span>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#065f46' }}>
+          Just renovated? Refine with a photo
+        </div>
       </div>
       <div style={{ fontSize: '13px', color: 'var(--ink-muted)', marginBottom: '16px' }}>
-        Upload an interior photo (living room, kitchen, bedroom). We score its furnishing
-        condition 0–10 and apply a ±10% adjustment to your price estimate.
+        Upload one interior photo (living room, kitchen, bedroom). We score its furnishing
+        condition and apply a ±10% adjustment — a well-presented flat can lift your estimate by
+        tens of thousands.
       </div>
 
       <div

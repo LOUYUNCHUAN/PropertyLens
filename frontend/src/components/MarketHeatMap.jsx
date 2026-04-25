@@ -3,15 +3,13 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { getTownCoords } from '../constants/towns.js'
 
-// Map YoY % change to a diverging colour scale.
 function yoyColor(yoy) {
-  if (yoy == null) return '#d4d4d8' // neutral grey when unknown
-  if (yoy >= 15) return '#b91c1c' // strong red
-  if (yoy >= 10) return '#ef4444'
-  if (yoy >= 5) return '#f97316'
-  if (yoy >= 0) return '#22c55e'
-  if (yoy <= -5) return '#2563eb'
-  return '#60a5fa'
+  if (yoy == null) return '#d4d4d8'
+  if (yoy >= 10) return '#b91c1c'
+  if (yoy >= 5) return '#ef4444'
+  if (yoy >= 0) return '#fbbf24'
+  if (yoy >= -5) return '#60a5fa'
+  return '#2563eb'
 }
 
 export default function MarketHeatMap({ townStats }) {
@@ -19,7 +17,6 @@ export default function MarketHeatMap({ townStats }) {
   const mapInstance = useRef(null)
   const layersRef = useRef([])
 
-  // Initialise map once
   useEffect(() => {
     if (mapInstance.current) return
 
@@ -49,13 +46,11 @@ export default function MarketHeatMap({ townStats }) {
     }
   }, [])
 
-  // Render / update town circles when stats change
   useEffect(() => {
     if (!mapInstance.current) return
 
     const map = mapInstance.current
 
-    // Clear previous layers
     layersRef.current.forEach((l) => map.removeLayer(l))
     layersRef.current = []
 
@@ -66,6 +61,13 @@ export default function MarketHeatMap({ townStats }) {
 
     const maxTxn = Math.max(
       ...valid.map((t) => (t.txn_current ? Number(t.txn_current) : 0))
+    )
+
+    const labeledTownSet = new Set(
+      [...valid]
+        .sort((a, b) => (b.txn_current || 0) - (a.txn_current || 0))
+        .slice(0, 15)
+        .map((t) => t.town)
     )
 
     const layers = []
@@ -103,6 +105,20 @@ export default function MarketHeatMap({ townStats }) {
       )
 
       layers.push(circle)
+
+      if (labeledTownSet.has(t.town)) {
+        const labelMarker = L.marker([lat, lng], {
+          icon: L.divIcon({
+            className: 'market-heatmap-town-label',
+            html: `<span>${t.town}</span>`,
+            iconSize: null,
+            iconAnchor: [-(radius + 4), 6]
+          }),
+          interactive: false,
+          keyboard: false
+        }).addTo(map)
+        layers.push(labelMarker)
+      }
     })
 
     layersRef.current = layers
@@ -113,31 +129,51 @@ export default function MarketHeatMap({ townStats }) {
       style={{
         position: 'relative',
         width: '100%',
-        height: 230,
+        height: '100%',
+        minHeight: 360,
         borderRadius: '14px',
         overflow: 'hidden',
         border: '1px solid #e5e7eb',
         background: '#f9fafb'
       }}
     >
+      <style>{`
+        .market-heatmap-town-label {
+          background: transparent;
+          border: 0;
+          pointer-events: none;
+        }
+        .market-heatmap-town-label span {
+          display: inline-block;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+          font-size: 10px;
+          font-weight: 600;
+          color: #111827;
+          background: rgba(255, 255, 255, 0.88);
+          padding: 1px 5px;
+          border-radius: 4px;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+          white-space: nowrap;
+        }
+      `}</style>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* Legend */}
       <div
         style={{
           position: 'absolute',
           top: 10,
-          right: 10,
-          padding: '6px 10px',
+          left: 10,
+          padding: '8px 10px',
           borderRadius: '10px',
-          background: 'rgba(255,255,255,0.95)',
+          background: 'rgba(255,255,255,0.96)',
           boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
           fontSize: '10px',
           color: '#4b5563',
           display: 'flex',
           flexDirection: 'column',
           gap: 4,
-          minWidth: 130
+          minWidth: 150,
+          zIndex: 500
         }}
       >
         <div
@@ -150,52 +186,40 @@ export default function MarketHeatMap({ townStats }) {
             marginBottom: 2
           }}
         >
-          Market heatmap
+          Market heat (YoY)
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: '999px',
-              background: '#ef4444'
-            }}
-          />
-          <span>Heating up (higher YoY)</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: '999px',
-              background: '#60a5fa'
-            }}
-          />
-          <span>Cooling / slower growth</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: '999px',
-              background: '#9ca3af'
-            }}
-          />
-          <span>Flat / unknown</span>
-        </div>
+        {[
+          { c: '#b91c1c', label: '≥ +10%' },
+          { c: '#ef4444', label: '+5 to +10%' },
+          { c: '#fbbf24', label: '0 to +5%' },
+          { c: '#60a5fa', label: '–5 to 0%' },
+          { c: '#2563eb', label: '≤ –5%' }
+        ].map((row) => (
+          <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: '999px',
+                background: row.c,
+                flex: '0 0 12px'
+              }}
+            />
+            <span>{row.label}</span>
+          </div>
+        ))}
         <div
           style={{
-            marginTop: 2,
+            marginTop: 4,
+            paddingTop: 4,
+            borderTop: '1px dashed #e5e7eb',
             fontSize: '9px',
-            color: '#9ca3af'
+            color: '#6b7280'
           }}
         >
-          Bubble size ≈ 2024 transaction count
+          ○ Bubble size ≈ transactions
         </div>
       </div>
     </div>
   )
 }
-

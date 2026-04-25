@@ -25,16 +25,16 @@ function readThemeColor(varName, fallback) {
   }
 }
 
-function listingNumberIcon(n) {
-  const primary = readThemeColor('--primary', '#4a7c6f')
-  const onPrimary = readThemeColor('--primary-foreground', '#ffffff')
+function listingNumberIcon(n, override = null) {
+  const bg = override?.bg || readThemeColor('--primary', '#4a7c6f')
+  const fg = override?.fg || readThemeColor('--primary-foreground', '#ffffff')
   return L.divIcon({
     className: '',
     html: `<div style="
       width:28px;height:28px;border-radius:50%;
-      background:${primary};color:${onPrimary};font-weight:800;font-size:12px;
+      background:${bg};color:${fg};font-weight:800;font-size:12px;
       display:flex;align-items:center;justify-content:center;
-      border:2px solid ${onPrimary};box-shadow:0 2px 8px rgba(0,0,0,0.25);
+      border:2px solid ${fg};box-shadow:0 2px 8px rgba(0,0,0,0.25);
     ">${n}</div>`,
     iconSize: [28, 28],
     iconAnchor: [14, 14]
@@ -62,7 +62,17 @@ export default function ShortlistMapView({
   nearbyById,
   selectedListingIds,
   onOpenListing,
-  gapPct
+  gapPct,
+  // Optional: { [rowId]: { label: '1', bg: '#059669', fg: '#fff' } }
+  // When set, overrides the default sequential pin label + theme colour for
+  // those listings. Used by ShortlistVersusView to colour-code slots 1/2/3.
+  pinAppearanceById = null,
+  // Optional: { [rowId]: { radiusM: 2000, color: '#059669', fillOpacity: 0.2 } }
+  // Renders a translucent circle around the pin showing the requested radius.
+  radiusOverlayById = null,
+  // When true, the map container stretches to fill its parent's height
+  // (parent must have an explicit height for this to do anything).
+  fillHeight = false
 }) {
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
@@ -127,6 +137,13 @@ export default function ShortlistMapView({
       scrollWheelZoom: false
     })
     L.control.zoom({ position: 'topleft' }).addTo(map)
+    // Ensure highway polylines render above other overlays.
+    const highwayPane = map.createPane('highwayPane')
+    highwayPane.style.zIndex = 650
+    // Radius circles sit just above tiles but BELOW everything else (markers,
+    // amenity pins, highway lines) so they never visually obscure other data.
+    const radiusPane = map.createPane('radiusPane')
+    radiusPane.style.zIndex = 350
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
       {
@@ -175,12 +192,31 @@ export default function ShortlistMapView({
       const g = geocodeById[row.id]
       const latlng = [g.lat, g.lng]
       bounds.push(latlng)
-      const num = listingNumber(row.id)
+      const override = pinAppearanceById ? pinAppearanceById[row.id] : null
+      const num = override?.label != null ? override.label : listingNumber(row.id)
       const gPct = gapPct?.(row.listing_price, row.predicted_price)
       const gapStr =
         gPct != null ? `${gPct > 0 ? '+' : ''}${gPct.toFixed(1)}% vs model` : '—'
 
-      const m = L.marker(latlng, { icon: listingNumberIcon(num) }).addTo(map)
+      // Optional translucent radius circle. Renders in `radiusPane` (z 350)
+      // — above the basemap tiles but BELOW amenity pins, listing markers,
+      // and highway polylines so the comparison overlay never hides data.
+      const overlay = radiusOverlayById ? radiusOverlayById[row.id] : null
+      if (overlay && Number.isFinite(Number(overlay.radiusM)) && overlay.radiusM > 0) {
+        const c = L.circle(latlng, {
+          pane: 'radiusPane',
+          radius: Number(overlay.radiusM),
+          color: overlay.color || '#4a7c6f',
+          fillColor: overlay.color || '#4a7c6f',
+          fillOpacity: overlay.fillOpacity ?? 0.2,
+          weight: 1.25,
+          opacity: 0.55,
+          interactive: false
+        }).addTo(map)
+        layers.push(c)
+      }
+
+      const m = L.marker(latlng, { icon: listingNumberIcon(num, override) }).addTo(map)
       const rid = row.id
       const popupPrimary = readThemeColor('--primary', '#4a7c6f')
       const popupOnPrimary = readThemeColor('--primary-foreground', '#ffffff')
@@ -212,17 +248,38 @@ export default function ShortlistMapView({
       mergedHighwaySegments.forEach((seg) => {
         const latlngs = (seg.latlngs || []).map(([la, ln]) => [la, ln])
         if (latlngs.length < 2) return
-        const line = L.polyline(latlngs, {
-          color: MAP_CATEGORY_STYLES.highway.border,
-          weight: 4,
-          opacity: 0.88,
+        // Two-stroke highway: bright halo + colored core for visibility.
+        const halo = L.polyline(latlngs, {
+          pane: 'highwayPane',
+          color: '#ffffff',
+          weight: 12,
+          opacity: 0.95,
           lineCap: 'round',
           lineJoin: 'round'
         }).addTo(map)
+        const line = L.polyline(latlngs, {
+          pane: 'highwayPane',
+          color: MAP_CATEGORY_STYLES.highway.border,
+          weight: 7,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map)
+        try {
+          halo.bringToFront()
+          line.bringToFront()
+        } catch {
+          /* ignore */
+        }
+        // Include highway endpoints in the fit-bounds so we don't zoom in so
+        // tight on the picked listings that the highway lines are clipped off
+        // the map.
+        latlngs.forEach((p) => bounds.push(p))
         line.bindTooltip(highwaySegmentTooltipHtml(seg), {
           sticky: true,
           className: 'amenity-tooltip'
         })
+        layers.push(halo)
         layers.push(line)
       })
     }
@@ -256,12 +313,14 @@ export default function ShortlistMapView({
     mergedHighwaySegments,
     activeCategory,
     listingNumber,
+    pinAppearanceById,
+    radiusOverlayById,
     gapPct,
     onOpenListing
   ])
 
   return (
-    <div className="w-full space-y-3">
+    <div className={`w-full space-y-3 ${fillHeight ? 'flex h-full flex-col' : ''}`}>
       <div
         className="flex flex-wrap gap-1.5"
         role="tablist"
@@ -307,10 +366,15 @@ export default function ShortlistMapView({
       </div>
 
       <div
-        className="relative overflow-hidden rounded-xl border border-border"
-        style={{ minHeight: 480 }}
+        className={`relative overflow-hidden rounded-xl border border-border ${
+          fillHeight ? 'min-h-0 flex-1' : ''
+        }`}
+        style={fillHeight ? { minHeight: 480 } : { minHeight: 480 }}
       >
-        <div ref={mapRef} className="h-[480px] w-full" />
+        <div
+          ref={mapRef}
+          className={fillHeight ? 'h-full w-full' : 'h-[480px] w-full'}
+        />
       </div>
     </div>
   )

@@ -15,7 +15,8 @@ export const MAP_CATEGORY_STYLES = {
   school: { bg: '#fef3e2', border: '#c8791a', icon: '🎓' },
   hawker: { bg: '#faf8f4', border: '#9a9590', icon: '🍜' },
   mall: { bg: '#f3e8f9', border: '#7c3aed', icon: '🛍️' },
-  highway: { bg: '#e8e8ec', border: '#52525b', icon: '🛣️' }
+  // Higher-contrast so the polyline stands out on light basemaps.
+  highway: { bg: '#fee2e2', border: '#dc2626', icon: '🛣️' }
 }
 
 /** Visual category for amenity layer (LRT uses MRT styling). */
@@ -89,15 +90,21 @@ export function mergeHighwaySegmentsDeduped(nearbyById, selectedIds) {
   const out = []
   for (const id of selectedIds) {
     const nearby = nearbyById[id]
-    const segs = nearby?.highway_segments
-    if (!Array.isArray(segs)) continue
-    for (const seg of segs) {
-      const ll = seg.latlngs
-      if (!Array.isArray(ll) || ll.length < 2) continue
-      const key = `${seg.name}|${Math.round(ll[0][0] * 1e5)}|${Math.round(ll[0][1] * 1e5)}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      out.push(seg)
+    if (!nearby) continue
+    // Prefer `highway_segments` (polyline data with latlngs); fall back to
+    // `highway` for older snapshots that stored polyline-shaped objects there.
+    const sources = []
+    if (Array.isArray(nearby.highway_segments)) sources.push(nearby.highway_segments)
+    if (Array.isArray(nearby.highway)) sources.push(nearby.highway)
+    for (const segs of sources) {
+      for (const seg of segs) {
+        const ll = seg?.latlngs
+        if (!Array.isArray(ll) || ll.length < 2) continue
+        const key = `${seg.name || ''}|${Math.round(ll[0][0] * 1e5)}|${Math.round(ll[0][1] * 1e5)}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push(seg)
+      }
     }
   }
   return out.sort((a, b) => (a.dist_m || 0) - (b.dist_m || 0))

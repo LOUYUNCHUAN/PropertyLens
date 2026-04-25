@@ -568,12 +568,6 @@ export function ComparePanel({
               <div style={{ fontSize: '10px', color: '#9ca3af' }}>
                 {formatConfidenceBandK(confidenceLow, confidenceHigh)}
               </div>
-              <span style={{ display: 'inline-block', marginTop: '6px',
-                background: '#1a2e2a', color: '#e2ede9',
-                fontSize: '9px', fontWeight: 700, letterSpacing: '0.7px',
-                padding: '2px 6px', borderRadius: '4px' }}>
-                MODEL-BASED
-              </span>
             </div>
 
             {/* Box 2 — CBR Median (conditional) */}

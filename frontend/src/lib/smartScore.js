@@ -55,6 +55,14 @@ export function buildValidateListingRequestBody(detail) {
   if (ask == null || !(Number(ask) > 0)) return null
   const asking_price = Number(ask)
 
+  // Pass the saved AI estimate so the backend's model_band subsystem can flag
+  // listings that fall outside the 95% confidence band. Saved snapshots have
+  // these fields at the top level (set when the wishlist row was created).
+  const predBlock = {}
+  if (Number.isFinite(Number(detail.predicted_price))) predBlock.predicted_price = Number(detail.predicted_price)
+  if (Number.isFinite(Number(detail.confidence_low))) predBlock.confidence_low = Number(detail.confidence_low)
+  if (Number.isFinite(Number(detail.confidence_high))) predBlock.confidence_high = Number(detail.confidence_high)
+
   const floor_area_sqm = Number(p.floor_area_sqm)
   const storey_mid = Number(p.storey_mid)
   const remaining_lease_years = Number(p.remaining_lease_years)
@@ -76,11 +84,12 @@ export function buildValidateListingRequestBody(detail) {
         storey_mid,
         remaining_lease_years,
         dist_nearest_mrt_km,
-        is_mature_estate: Number(p.is_mature_estate ?? 0) !== 0
+        is_mature_estate: Number(p.is_mature_estate ?? 0) !== 0,
+        ...predBlock
       }
     }
   }
-  return { mode: 'flat', body: { asking_price, flat: p } }
+  return { mode: 'flat', body: { asking_price, flat: p, ...predBlock } }
 }
 
 // ---------- Pillar 1: Price vs model (max 60) ----------

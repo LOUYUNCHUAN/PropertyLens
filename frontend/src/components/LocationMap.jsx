@@ -10,6 +10,15 @@ import {
   highwaySegmentTooltipHtml
 } from '@/lib/mapAmenities.js'
 
+function formatRoadType(type) {
+  const raw = String(type || '').trim()
+  if (!raw) return ''
+  const lower = raw.toLowerCase()
+  if (lower === 'motorway') return 'Expressway'
+  const name = lower.charAt(0).toUpperCase() + lower.slice(1)
+  return `${name} road`
+}
+
 export default function LocationMap({
   geocode,
   nearby,
@@ -47,6 +56,10 @@ export default function LocationMap({
     })
 
     L.control.zoom({ position: 'topleft' }).addTo(map)
+
+    // Ensure highway polylines render above other overlays.
+    const highwayPane = map.createPane('highwayPane')
+    highwayPane.style.zIndex = 650
 
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
@@ -157,19 +170,37 @@ export default function LocationMap({
           if (latlngs.length < 2) return
           const key = `highway-seg-${idx}`
           const isSelected = selectedItem === key
-          const line = L.polyline(latlngs, {
-            color: isSelected ? '#4a7c6f' : CATEGORY_STYLES.highway.border,
-            weight: isSelected ? 6 : 4,
-            opacity: 0.88,
+          // Two-stroke highway: soft halo + neutral core so it reads as a
+          // road, not an alert. Selected state keeps the teal emphasis.
+          const halo = L.polyline(latlngs, {
+            pane: 'highwayPane',
+            color: '#ffffff',
+            weight: isSelected ? 8 : 6,
+            opacity: 0.6,
             lineCap: 'round',
             lineJoin: 'round'
           }).addTo(map)
+          const line = L.polyline(latlngs, {
+            pane: 'highwayPane',
+            color: isSelected ? '#4a7c6f' : '#9ca3af',
+            weight: isSelected ? 5 : 3,
+            opacity: 0.9,
+            lineCap: 'round',
+            lineJoin: 'round'
+          }).addTo(map)
+          try {
+            halo.bringToFront()
+            line.bringToFront()
+          } catch {
+            /* ignore */
+          }
           line.bindTooltip(highwaySegmentTooltipHtml(seg), {
             sticky: true,
             className: 'amenity-tooltip'
           })
           line.on('click', () => setSelectedItem(key))
           amenityMarkersRef.current[key] = line
+          layers.push(halo)
           layers.push(line)
         })
       } else if (
@@ -230,30 +261,9 @@ export default function LocationMap({
     setSelectedItem((prev) => (prev === key ? null : key))
   }, [])
 
-  const distChips = locationContext
-    ? [
-        {
-          icon: '🚇',
-          label: 'MRT',
-          val: `${(locationContext.dist_to_mrt_m / 1000).toFixed(2)} km`
-        },
-        {
-          icon: '🎓',
-          label: 'School',
-          val: `${(locationContext.dist_to_school_m / 1000).toFixed(2)} km`
-        },
-        {
-          icon: '🍜',
-          label: 'Hawker',
-          val: `${(locationContext.dist_to_hawker_m / 1000).toFixed(2)} km`
-        },
-        {
-          icon: '🛍️',
-          label: 'Mall',
-          val: `${(locationContext.dist_to_mall_m / 1000).toFixed(2)} km`
-        }
-      ]
-    : []
+  // Aggregate distance chips dropped: they reported feature-table averages that
+  // often contradicted the nearest-POI values shown in the grid below. Single
+  // source of truth is now the POI grid.
 
   const totalNearby = useMemo(() => {
     if (!nearby) return 0
@@ -382,7 +392,7 @@ export default function LocationMap({
             border: '1px solid var(--border)'
           }}
         >
-          <div ref={mapRef} style={{ width: '100%', height: '280px' }} />
+          <div ref={mapRef} style={{ width: '100%', height: '420px' }} />
 
           {/* Town + mature badge — bottom-left, clear of zoom controls */}
           <div
@@ -450,49 +460,6 @@ export default function LocationMap({
             )}
           </div>
 
-          {/* Distance chips */}
-          {distChips.length > 0 && (
-            <div
-              style={{
-                position: 'absolute',
-                bottom: '12px',
-                right: '12px',
-                zIndex: 1000,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px',
-                alignItems: 'flex-end'
-              }}
-            >
-              {distChips.map((chip) => (
-                <div
-                  key={chip.label}
-                  style={{
-                    background: 'white',
-                    border: '1px solid var(--border)',
-                    borderRadius: '20px',
-                    padding: '3px 10px',
-                    fontSize: '11px',
-                    color: 'var(--ink-light)',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px'
-                  }}
-                >
-                  {chip.icon} {chip.label}{' '}
-                  <strong
-                    style={{
-                      fontFamily: 'JetBrains Mono, monospace',
-                      color: 'var(--ink)'
-                    }}
-                  >
-                    {chip.val}
-                  </strong>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* POI grid below map */}
@@ -594,11 +561,10 @@ export default function LocationMap({
                             fontSize: '9px',
                             fontWeight: 600,
                             color: 'var(--ink-muted)',
-                            marginTop: '3px',
-                            textTransform: 'capitalize'
+                            marginTop: '3px'
                           }}
                         >
-                          {String(item.type)}
+                          {formatRoadType(item.type)}
                         </div>
                       ) : null}
                     </div>

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChatMarkdown } from './ChatMarkdown.jsx'
 import { TOWNS } from '../constants/towns.js'
 import { api } from '../api/client.js'
@@ -10,6 +10,15 @@ export default function ChatBot() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const controllerRef = useRef(null)
+  const chatBoxRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const el = chatBoxRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (distanceFromBottom < 80) el.scrollTop = el.scrollHeight
+  }, [messages, loading, open])
 
   async function sendMessage(e, overrideText) {
     if (e && e.preventDefault) e.preventDefault()
@@ -40,9 +49,16 @@ export default function ChatBot() {
 
     try {
       const baseURL = api.defaults.baseURL || 'http://localhost:8000'
-      const res = await fetch(`${baseURL}/api/chat`, {
+      const tok =
+        typeof localStorage !== 'undefined'
+          ? localStorage.getItem('hdb_token')
+          : null
+      const headers = { 'Content-Type': 'application/json' }
+      if (tok) headers.Authorization = `Bearer ${tok}`
+
+      const res = await fetch(`${baseURL}/api/property-search-chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ message: userText, history: historyPayload }),
         signal: controllerRef.current.signal
       })
@@ -55,8 +71,16 @@ export default function ChatBot() {
 
       setMessages((prev) => [...prev, { role: 'assistant', text: '' }])
 
+      const decodeSseText = (s) =>
+        String(s || '')
+          .replaceAll('\\\\', '\\')
+          .replaceAll('\\n', '\n')
+
       const parser = createChatSseStreamParser((payload) => {
         if (payload === '[DONE]') return
+        if (payload.startsWith('[LOG]')) return
+        if (payload.startsWith('[STATUS]')) return
+        if (payload.startsWith('[PARAMS]')) return
         if (payload.startsWith('[SOURCES]')) {
           const match = payload.match(/\[SOURCES\](.*)\[\/SOURCES\]/)
           if (match?.[1]) {
@@ -77,7 +101,7 @@ export default function ChatBot() {
           }
           return
         }
-        answer += payload
+        answer += decodeSseText(payload)
         setMessages((prev) => {
           const i = prev.length - 1
           if (i < 0 || prev[i].role !== 'assistant') return prev
@@ -121,7 +145,7 @@ export default function ChatBot() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full border-0 bg-primary text-xl font-semibold text-primary-foreground shadow-lg shadow-primary/40 animate-pulse"
+        className="fixed bottom-6 right-6 z-[1100] flex h-14 w-14 cursor-pointer items-center justify-center rounded-full border-0 bg-primary text-xl font-semibold text-primary-foreground shadow-lg shadow-primary/40 animate-pulse"
         aria-label="Open chat"
       >
         ?
@@ -129,7 +153,7 @@ export default function ChatBot() {
 
       {open && (
         <div
-          className="fixed bottom-24 right-4 z-50 flex max-h-[min(520px,calc(100vh-120px))] w-[min(calc(100vw-32px),400px)] flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg ring-1 ring-white/10"
+          className="fixed bottom-24 right-4 z-[1100] flex max-h-[min(520px,calc(100vh-120px))] w-[min(calc(100vw-32px),400px)] flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg ring-1 ring-white/10"
           style={{ boxSizing: 'border-box' }}
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -161,7 +185,10 @@ export default function ChatBot() {
             ))}
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden p-3 text-[13px]">
+          <div
+            ref={chatBoxRef}
+            className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden p-3 text-[13px]"
+          >
             {messages.map((m, idx) => (
               <div
                 key={idx}
