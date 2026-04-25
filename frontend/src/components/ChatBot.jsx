@@ -158,32 +158,33 @@ export default function ChatBot() {
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
-              <div className="text-[13px] font-semibold text-foreground">Ask HDB ResaleXAI</div>
-              <div className="text-[11px] text-muted-foreground">
-                Local LLM + rules / SHAP context
-              </div>
+              <div className="text-[13px] font-semibold text-foreground">Ask AI</div>
             </div>
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">beta</span>
           </div>
 
-          <div className="flex flex-wrap gap-1.5 border-b border-border px-3 py-2">
-            {[
-              'Why is this flat priced this way?',
-              'Show rules for 4-room in Bedok',
-              'What impacts price near MRT?'
-            ].map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => {
-                  sendMessage(null, q)
-                }}
-                className="cursor-pointer rounded-full border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
+          {messages.length === 0 && (
+            <div className="flex flex-wrap gap-1.5 border-b border-border px-3 py-2">
+              {[
+                'Find a 4-room flat in Bishan near famous schools under $900k',
+                '3-room flat near MRT in Toa Payoh under $500k',
+                'Show me flats within 1km of Nanyang Primary School',
+                'Large 5-room flat with long lease, affordable price, away from highway noise',
+                '3-room flat in Bishan under $100k',
+                'Find a 4-room flat near Tampines with famous school and MRT access'
+              ].map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => {
+                    sendMessage(null, q)
+                  }}
+                  className="cursor-pointer rounded-full border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div
             ref={chatBoxRef}

@@ -27,10 +27,10 @@ import {
   personaHighlightColumn
 } from '../lib/shortlistPersonaUtils.js'
 import NlPlanChips, { unknownTagsById, UNKNOWN_LABEL } from '../components/NlPlanChips.jsx'
-import { Home, LayoutGrid, Map as MapIcon, Puzzle, RotateCw, Search, X } from 'lucide-react'
-import SHAPChart from '../components/SHAPChart.jsx'
+import { Home, LayoutGrid, Map as MapIcon, Puzzle, Search, X } from 'lucide-react'
 import LocationMap from '../components/LocationMap.jsx'
 import CBRTable from '../components/CBRTable.jsx'
+import CompositeShapPanel from '@/components/buyer/CompositeShapPanel.jsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -198,38 +198,35 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
       .catch((e) => setErr(e?.message || 'Failed to load'))
   }, [itemId, username])
 
-  // Reset overlay refresh state when switching to a different shortlist row.
+  // Reset live-CBR state when switching to a different shortlist row.
   useEffect(() => {
     setRefreshedCbr(null)
     setRefreshState('idle')
   }, [itemId])
 
-  // Detect snapshots saved before the CBR parquet fix: pre-fix rows have
-  // empty town and lease=0, or transaction year ≤ 2023 (parquet was capped).
-  // Hook called unconditionally — must precede the early-return below.
-  const cbrSnapshotRows = detail?.cbr_snapshot_json || []
-  const cbrSnapshotStale = useMemo(() => {
-    if (!cbrSnapshotRows.length) return false
-    const hasEmptyTown = cbrSnapshotRows.some(
-      (c) => !c.town || String(c.town).trim() === ''
-    )
-    const allOld = cbrSnapshotRows.every(
-      (c) => Number(c.year) > 0 && Number(c.year) <= 2023
-    )
-    return hasEmptyTown || allOld
-  }, [cbrSnapshotRows])
-
-  const handleRefreshCbr = useCallback(async () => {
-    if (!detail?.payload_json || refreshState === 'loading') return
+  // Always fetch CBR live (matches Buyer view). Falls back to the saved
+  // snapshot silently if the call fails.
+  useEffect(() => {
+    const flat = detail?.payload_json
+    if (!flat) return
+    let cancelled = false
     setRefreshState('loading')
-    try {
-      const resp = await getCBR(detail.payload_json, 5)
-      setRefreshedCbr(resp?.comparables || [])
-      setRefreshState('idle')
-    } catch {
-      setRefreshState('error')
+    getCBR(flat, 5)
+      .then((resp) => {
+        if (cancelled) return
+        setRefreshedCbr(resp?.comparables || [])
+        setRefreshState('idle')
+      })
+      .catch(() => {
+        if (cancelled) return
+        setRefreshState('error')
+      })
+    return () => {
+      cancelled = true
     }
-  }, [detail?.payload_json, refreshState])
+  }, [detail?.payload_json])
+
+  const cbrSnapshotRows = detail?.cbr_snapshot_json || []
 
   if (!itemId) return null
 
@@ -238,8 +235,7 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
   const predSnap = detail?.prediction_snapshot_json || {}
   const cbrComparables = refreshedCbr ?? cbrSnapshotRows
 
-  const handleAnalyseAsSeller = () => {
-    if (!detail) return
+  const buildFlatParams = () => {
     const params = new URLSearchParams()
     if (p.block) params.set('block', String(p.block))
     if (p.street_name) params.set('street_name', String(p.street_name))
@@ -249,7 +245,23 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
     if (p.storey_range) params.set('storey_range', String(p.storey_range))
     if (p.lease_commence_date != null) params.set('lease_commence_date', String(p.lease_commence_date))
     if (p.sale_month) params.set('sale_month', String(p.sale_month))
-    navigate(`/seller?${params.toString()}`)
+    return params
+  }
+
+  const handleAnalyseAsSeller = () => {
+    if (!detail) return
+    navigate(`/seller?${buildFlatParams().toString()}`)
+  }
+
+  const handleAnalyseAsBuyer = () => {
+    if (!detail) return
+    const params = buildFlatParams()
+    // Prefill the buyer's asking-price field with the saved listing price so
+    // the offer-planner step has a meaningful starting point.
+    if (detail.listing_price != null) {
+      params.set('asking_price', String(detail.listing_price))
+    }
+    navigate(`/buyer?${params.toString()}`)
   }
 
   return (
@@ -265,7 +277,7 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
         className="max-h-[90vh] w-full max-w-[min(96vw,1100px)] overflow-y-auto py-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-card px-5 py-4">
+        <div className="sticky top-0 z-[1100] flex items-start justify-between gap-3 border-b border-border bg-card px-5 py-4">
           <div>
             <h2 id="shortlist-modal-title" className="text-lg font-semibold text-foreground">
               {detail?.display_label || 'Listing'}
@@ -355,7 +367,7 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Location & amenities
                 </div>
-                <div className="overflow-hidden rounded-xl border border-border">
+                <div className="overflow-hidden rounded-xl border border-border p-3">
                   <LocationMap
                     geocode={mapSnap.geocode || null}
                     nearby={mapSnap.nearby || null}
@@ -371,54 +383,30 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
 
               <div className="rounded-xl border border-border bg-card p-4">
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Price drivers (SHAP)
+                  Price drivers (Composite SHAP)
                 </div>
-                {detail.shap_snapshot_json?.length ? (
-                  <SHAPChart shapValues={detail.shap_snapshot_json} maxFeatures={12} />
+                {p && Object.keys(p).length > 0 ? (
+                  <CompositeShapPanel flat={p} hideStackBreakdown />
                 ) : (
                   <p className="text-[12px] text-muted-foreground">
-                    No SHAP snapshot stored for this row.
+                    No saved flat payload to compute SHAP.
                   </p>
                 )}
               </div>
 
               <div className="rounded-xl border border-border bg-card p-4">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Similar past sales
-                  </div>
-                  {refreshedCbr && (
-                    <span className="text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-                      Live · refreshed
-                    </span>
-                  )}
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Similar past sales
                 </div>
-                {cbrSnapshotStale && !refreshedCbr && (
-                  <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                    <span className="flex-1">
-                      Stale snapshot — saved before the CBR data was refreshed. Town and lease may be missing.
-                    </span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleRefreshCbr}
-                      disabled={refreshState === 'loading'}
-                    >
-                      <RotateCw
-                        className={`mr-1 h-3 w-3 ${refreshState === 'loading' ? 'animate-spin' : ''}`}
-                        aria-hidden
-                      />
-                      {refreshState === 'loading' ? 'Refreshing…' : 'Refresh'}
-                    </Button>
-                  </div>
+                {refreshState === 'loading' && cbrComparables.length === 0 && (
+                  <p className="text-[12px] text-muted-foreground">Loading recent comparables…</p>
                 )}
-                {refreshState === 'error' && (
-                  <div className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
-                    Couldn't refresh comparables — try again.
-                  </div>
+                {refreshState === 'error' && cbrComparables.length === 0 && (
+                  <p className="text-[12px] text-destructive">
+                    Couldn't load comparables. Showing nothing rather than stale data.
+                  </p>
                 )}
-                <CBRTable comparables={cbrComparables} />
+                <CBRTable comparables={cbrComparables} hideMatch />
               </div>
 
               {removeError && (
@@ -430,6 +418,9 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
               <div className="flex flex-wrap justify-end gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={onClose}>
                   Close
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={handleAnalyseAsBuyer}>
+                  Analyse as buyer
                 </Button>
                 <Button type="button" variant="outline" size="sm" onClick={handleAnalyseAsSeller}>
                   Analyse as seller
@@ -812,7 +803,7 @@ export default function ShortlistView() {
     return {
       label: 'How we sort',
       detail:
-        'Pick Family (schools), Commuter (MRT/LRT), or Investor (deal quality from Smart Score), or Custom filter for natural language. With no persona, use column headers to sort.'
+        'Pick Family (schools), Commuter (MRT/LRT), or Investor (deal quality from Smart Score). With no persona, use column headers to sort.'
     }
   }, [activePersona, CUSTOM_PERSONA_ID])
 
@@ -973,22 +964,8 @@ export default function ShortlistView() {
                         </button>
                       )
                     })}
-                    <button
-                      key={CUSTOM_PERSONA_ID}
-                      type="button"
-                      title="Custom filter + sort (natural language)"
-                      onClick={() => handlePersonaClick(CUSTOM_PERSONA_ID)}
-                      className={`flex h-12 min-w-[140px] max-w-[180px] flex-1 flex-col items-center justify-center rounded-xl border-[1.5px] text-[13px] font-medium transition-all ${
-                        activePersona === CUSTOM_PERSONA_ID
-                          ? 'border-primary/60 bg-primary/10 text-primary shadow-sm'
-                          : 'border-border bg-card text-muted-foreground hover:-translate-y-0.5 hover:shadow-sm'
-                      } ${activePersona === CUSTOM_PERSONA_ID ? 'font-bold' : ''}`}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <span aria-hidden>🧩</span>
-                        CUSTOM filter
-                      </span>
-                    </button>
+                    {/* CUSTOM filter button hidden — NL search panel still works
+                        if `activePersona === CUSTOM_PERSONA_ID` is set elsewhere. */}
                   </div>
                   {customFilterPanel}
                   <div

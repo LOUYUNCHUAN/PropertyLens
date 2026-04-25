@@ -9,7 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts'
-import { api, getModelMeta } from '../api/client.js'
+import { api } from '../api/client.js'
 import MarketHeatMap from '../components/MarketHeatMap.jsx'
 import ShortlistQuickGlance from '../components/ShortlistQuickGlance.jsx'
 import RecentTransactionsFeed from '../components/RecentTransactionsFeed.jsx'
@@ -342,7 +342,6 @@ export default function DashboardView() {
 
   const [trendData, setTrendData] = useState([])
   const [townStats, setTownStats] = useState([])
-  const [modelMeta, setModelMeta] = useState(null)
   const [summaryYear, setSummaryYear] = useState(null)
   const [totalTxns, setTotalTxns] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -350,10 +349,9 @@ export default function DashboardView() {
   useEffect(() => {
     ;(async () => {
       try {
-        const [trendsRes, townsRes, meta] = await Promise.all([
+        const [trendsRes, townsRes] = await Promise.all([
           api.get('/api/analytics/trends'),
-          api.get('/api/analytics/town-summary'),
-          getModelMeta()
+          api.get('/api/analytics/town-summary')
         ])
         const raw = trendsRes.data?.trends || []
         const latestYearInTrends = raw.length
@@ -369,7 +367,6 @@ export default function DashboardView() {
           raw.filter((d) => d.year >= yr - 4 && d.year <= yr + 1)
         )
         setTownStats(townsRes.data?.towns || [])
-        setModelMeta(meta)
       } catch (err) {
         setError(
           'Could not load market data. Is the backend running on port 8000?'
@@ -523,24 +520,6 @@ export default function DashboardView() {
           >
             {greeting}, {userLabel}
           </h1>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 14,
-              lineHeight: 1.55,
-              color: 'var(--text-secondary)',
-              maxWidth: 640
-            }}
-          >
-            Singapore HDB resale market ·{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
-              {totalTxns ? totalTxns.toLocaleString() : '—'}
-            </strong>{' '}
-            transactions · {modelMeta?.model_name || 'Hybrid Cluster'} R²{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
-              {modelMeta?.r2?.toFixed(4) ?? '—'}
-            </strong>
-          </p>
         </div>
         <div
           style={{

@@ -18,10 +18,21 @@ function matchDisplayPct(c) {
   return Number.isFinite(v) ? v : 0
 }
 
-export default function CBRTable({ comparables }) {
+export default function CBRTable({ comparables, hideMatch = false }) {
   if (!comparables?.length) return null
 
   const fmt = (n) => `$${Math.round(n).toLocaleString()}`
+  const headers = [
+    'Block',
+    'Street',
+    'Town',
+    'Sold',
+    'Type',
+    'Area',
+    'Storey',
+    'Price',
+    ...(hideMatch ? [] : ['Match'])
+  ]
 
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -34,17 +45,7 @@ export default function CBRTable({ comparables }) {
       >
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)' }}>
-            {[
-              'Block',
-              'Street',
-              'Town',
-              'Sold',
-              'Type',
-              'Area',
-              'Storey',
-              'Price',
-              'Match'
-            ].map((h) => (
+            {headers.map((h) => (
               <th
                 key={h}
                 style={{
@@ -152,43 +153,45 @@ export default function CBRTable({ comparables }) {
               >
                 {fmt(c.resale_price)}
               </td>
-              <td style={{ padding: '10px 12px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
+              {!hideMatch && (
+                <td style={{ padding: '10px 12px' }}>
                   <div
                     style={{
-                      flex: 1,
-                      height: '4px',
-                      background: 'var(--border)',
-                      borderRadius: '2px'
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
                     }}
                   >
                     <div
                       style={{
-                        width: `${Math.min(100, mp)}%`,
-                        height: '100%',
-                        background: 'var(--sage)',
+                        flex: 1,
+                        height: '4px',
+                        background: 'var(--border)',
                         borderRadius: '2px'
                       }}
-                    />
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(100, mp)}%`,
+                          height: '100%',
+                          background: 'var(--sage)',
+                          borderRadius: '2px'
+                        }}
+                      />
+                    </div>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: 'var(--sage)',
+                        fontWeight: 600
+                      }}
+                    >
+                      {Math.round(mp)}%
+                    </span>
                   </div>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontFamily: 'JetBrains Mono, monospace',
-                      color: 'var(--sage)',
-                      fontWeight: 600
-                    }}
-                  >
-                    {Math.round(mp)}%
-                  </span>
-                </div>
-              </td>
+                </td>
+              )}
             </tr>
           )})}
         </tbody>

@@ -159,7 +159,13 @@ export default function DebugView() {
           <PropertySearchGraph nodes={nodes} links={links} error={error} />
         </div>
 
-        <div style={{ display: 'grid', gap: 24 }}>
+        <div
+          style={{
+            display: 'grid',
+            gap: 24,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
+          }}
+        >
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#374151' }}>
               Towns ({towns.length})
@@ -222,7 +228,7 @@ export default function DebugView() {
             </div>
           </div>
 
-          <details>
+          <details style={{ gridColumn: '1 / -1' }}>
             <summary
               style={{
                 fontSize: 13,

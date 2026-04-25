@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Search, Bell, Settings } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -38,20 +38,7 @@ export default function AppHeader() {
       <h1 className="font-display text-display-sm tracking-tight text-foreground">{title}</h1>
 
       <div className="flex items-center gap-2">
-        <span className="mr-2 hidden items-center gap-1.5 text-xs font-medium text-muted-foreground sm:inline-flex">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-primary shadow-[0_0_8px_oklch(0.58_0.15_145/0.6)]" />
-          API live
-        </span>
         <ThemeToggle />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Search"
-        >
-          <Search className="h-5 w-5" />
-        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -61,15 +48,6 @@ export default function AppHeader() {
           onClick={() => navigate('/account')}
         >
           <Settings className="h-5 w-5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="relative h-10 w-10 text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Notifications"
-        >
-          <Bell className="h-5 w-5" />
         </Button>
 
         <div className="ml-2 flex items-center gap-2 border-l border-border/80 pl-4">
