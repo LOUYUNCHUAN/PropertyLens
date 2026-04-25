@@ -8,7 +8,7 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts'
-import { humanizeAprioriWarning } from '@/lib/sellerSignals.js'
+import { humanizeAprioriWarning, humanizePriceBand } from '@/lib/sellerSignals.js'
 import { cn } from '@/lib/utils'
 import { WhatIfSlider } from '@/components/whatif/WhatIfSlider.jsx'
 
@@ -41,7 +41,11 @@ export function ViolationCard({ v }) {
           marginBottom: '6px'
         }}
       >
-        {v.source === 'surrogate' ? 'Surrogate rule' : 'Apriori pattern'}
+        {v.source === 'surrogate'
+          ? 'Decision tree rule'
+          : v.source === 'model_band'
+            ? 'AI estimate band'
+            : 'Market pattern'}
       </div>
       <div
         style={{
@@ -63,19 +67,62 @@ export function ViolationCard({ v }) {
           flexWrap: 'wrap'
         }}
       >
-        <span>
-          Expected:{' '}
-          <strong style={{ color: '#16a34a' }}>{v.expected}</strong>
-        </span>
-        <span>·</span>
-        <span>
-          Your listing:{' '}
-          <strong style={{ color: '#dc2626' }}>{v.actual}</strong>
-        </span>
-        <span>·</span>
-        <span>
-          Confidence: <strong>{Math.round(v.rule_confidence * 100)}%</strong>
-        </span>
+        {v.source === 'surrogate' ? (
+          <>
+            <span>
+              Reference price:{' '}
+              <strong style={{ color: '#16a34a' }}>{v.expected}</strong>
+            </span>
+            <span>·</span>
+            <span>
+              Your asking:{' '}
+              <strong style={{ color: '#dc2626' }}>{v.actual}</strong>
+            </span>
+            <span>·</span>
+            <span title="Tree fidelity is global to the surrogate model — not per-rule. Use as a directional check.">
+              Tree fidelity:{' '}
+              <strong>{Math.round(v.rule_confidence * 100)}%</strong>
+            </span>
+          </>
+        ) : v.source === 'model_band' ? (
+          <>
+            <span>
+              AI band:{' '}
+              <strong style={{ color: '#16a34a' }}>{v.expected}</strong>
+            </span>
+            <span>·</span>
+            <span>
+              Your asking:{' '}
+              <strong style={{ color: '#dc2626' }}>{v.actual}</strong>
+            </span>
+            <span>·</span>
+            <span title="Model confidence = the AI estimate's 95% interval coverage.">
+              Confidence:{' '}
+              <strong>{Math.round(v.rule_confidence * 100)}%</strong>
+            </span>
+          </>
+        ) : (
+          <>
+            <span>
+              Expected:{' '}
+              <strong style={{ color: '#16a34a' }}>
+                {humanizePriceBand(v.expected)}
+              </strong>
+            </span>
+            <span>·</span>
+            <span>
+              Your listing:{' '}
+              <strong style={{ color: '#dc2626' }}>
+                {humanizePriceBand(v.actual)}
+              </strong>
+            </span>
+            <span>·</span>
+            <span title="Confidence = fraction of historical sales matching this IF that ended up in the THEN bucket.">
+              Confidence:{' '}
+              <strong>{Math.round(v.rule_confidence * 100)}%</strong>
+            </span>
+          </>
+        )}
       </div>
       <div style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
         {v.suggestion}
@@ -89,15 +136,22 @@ export function CSPBanner({ cspResult, askingPrice, predictedPrice, loading }) {
   const hasViolations = cspResult.violation_count > 0
   const ap = cspResult.apriori
   const su = cspResult.surrogate
+  const mb = cspResult.model_band
+  const allViol = cspResult.violations || []
   const apViol = ap?.violations?.length
     ? ap.violations
-    : (cspResult.violations || []).filter((x) => (x.source || 'apriori') !== 'surrogate')
+    : allViol.filter((x) => (x.source || 'apriori') === 'apriori')
   const suViol = su?.violations?.length
     ? su.violations
-    : (cspResult.violations || []).filter((x) => x.source === 'surrogate')
+    : allViol.filter((x) => x.source === 'surrogate')
+  const mbViol = mb?.violations?.length
+    ? mb.violations
+    : allViol.filter((x) => x.source === 'model_band')
   const apSat = ap?.satisfied ?? []
   const suSat = su?.satisfied ?? []
+  const mbSat = mb?.satisfied ?? []
   const showSurrogateBlock = su != null || suViol.length > 0 || suSat.length > 0
+  const showModelBandBlock = mb != null || mbViol.length > 0 || mbSat.length > 0
 
   return (
     <div
@@ -122,18 +176,20 @@ export function CSPBanner({ cspResult, askingPrice, predictedPrice, loading }) {
           <div style={{ fontWeight: 700, fontSize: '14px', color: '#111827' }}>
             {hasViolations
               ? `Listing checks — ${cspResult.violation_count} issue${cspResult.violation_count > 1 ? 's' : ''}`
-              : 'Listing consistent with market patterns and surrogate checks'}
+              : 'Listing consistent with market patterns and decision-tree checks'}
           </div>
           <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
             Asking price{' '}
-            <strong>${askingPrice.toLocaleString()}</strong> · CSP{' '}
+            <strong>${askingPrice.toLocaleString()}</strong>{' '}
             <span
               style={{
                 fontWeight: 700,
                 color: hasViolations ? '#b45309' : '#16a34a'
               }}
             >
-              {cspResult.csp_status}
+              {hasViolations
+                ? '— above typical pattern for this flat profile'
+                : '— consistent with typical pattern for this flat profile'}
             </span>
             {loading && (
               <span style={{ marginLeft: '6px', opacity: 0.7 }}>…</span>
@@ -141,6 +197,34 @@ export function CSPBanner({ cspResult, askingPrice, predictedPrice, loading }) {
           </div>
         </div>
       </div>
+
+      {showModelBandBlock && (
+        <div style={{ marginBottom: '12px' }}>
+          <div
+            style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              color: '#64748b',
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              marginBottom: '8px'
+            }}
+          >
+            AI estimate confidence band
+          </div>
+          {mbViol.map((v, i) => (
+            <ViolationCard key={`m-${i}`} v={v} />
+          ))}
+          {mbSat.map((s, i) => (
+            <div
+              key={`ms-${i}`}
+              style={{ fontSize: '12px', color: '#166534', marginBottom: '4px' }}
+            >
+              {s}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ marginBottom: showSurrogateBlock ? '12px' : 0 }}>
         <div
@@ -153,7 +237,7 @@ export function CSPBanner({ cspResult, askingPrice, predictedPrice, loading }) {
             marginBottom: '8px'
           }}
         >
-          Market patterns (Apriori)
+          Market patterns
         </div>
         {apViol.map((v, i) => (
           <ViolationCard key={`a-${i}`} v={v} />
@@ -185,16 +269,16 @@ export function CSPBanner({ cspResult, askingPrice, predictedPrice, loading }) {
               marginBottom: '8px'
             }}
           >
-            Model rules (surrogate)
+            Decision tree reference price
           </div>
           {su == null && suViol.length === 0 && (
             <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '8px' }}>
-              Surrogate check unavailable (feature bundle not loaded or error on server).
+              Decision-tree cross-check unavailable for this flat.
             </div>
           )}
           {su != null && suViol.length === 0 && suSat.length === 0 && (
             <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '8px' }}>
-              No surrogate rule path matched, or all matched paths align with your ask.
+              No decision-tree path flagged your asking price — it lines up with the model&apos;s expected range.
             </div>
           )}
           {suViol.map((v, i) => (
@@ -577,7 +661,8 @@ export function WhatIfSimulator({
       changes.push(`${Math.round(whatIfArea)} sqm (${dir} than yours)`)
     }
 
-    if (!changes.length) return 'Adjust the sliders to see the impact.'
+    if (!changes.length)
+      return "Drag any slider to see how much that factor affects your flat's price — and how much to concede."
 
     const absD = formatSGD(Math.abs(delta))
     const changeStr = changes.join(', ')

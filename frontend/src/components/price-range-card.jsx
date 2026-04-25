@@ -88,22 +88,16 @@ export function PriceRangeCard({
           <p className="mt-1 text-xs text-muted-foreground">
             {formatConfidenceBandK(confidenceLow, confidenceHigh)}
           </p>
-          <span className="mt-2 inline-block rounded bg-slate-900 px-2 py-0.5 text-[10px] font-medium text-white dark:bg-slate-800">
-            MODEL-BASED
-          </span>
         </div>
 
         <div className="rounded-xl border border-border/80 border-l-4 border-l-blue-400 bg-gradient-to-br from-blue-50 to-card p-5 shadow-sm dark:from-blue-950/25 dark:to-card">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            CBR median
+            Similar recent sales
           </p>
           <p className="text-2xl font-bold text-blue-600">{s(cbrMedian)}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {cbrSampleSize} recent comparable sales
+            Median of {cbrSampleSize} recent comparable sales
           </p>
-          <span className="mt-2 inline-block rounded bg-slate-900 px-2 py-0.5 text-[10px] font-medium text-white dark:bg-slate-800">
-            CBR
-          </span>
         </div>
 
         <div className="rounded-xl border border-border/80 border-l-4 border-l-amber-500 bg-gradient-to-br from-amber-50 to-card p-5 shadow-sm dark:from-amber-950/25 dark:to-card">

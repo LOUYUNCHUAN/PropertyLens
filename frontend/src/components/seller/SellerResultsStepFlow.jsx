@@ -15,10 +15,14 @@ import BuyerStepCard from '@/components/buyer/BuyerStepCard.jsx'
 import BuyerStepProgressBar from '@/components/buyer/BuyerStepProgressBar.jsx'
 import CbrDivergenceWarning from '@/components/CbrDivergenceWarning.jsx'
 import { PriceRangeCard } from '@/components/price-range-card.jsx'
+import ShapComparisonCard from '@/components/buyer/ShapComparisonCard.jsx'
+import CompositeShapPanel from '@/components/buyer/CompositeShapPanel.jsx'
+import SellerPriceRecommendationCard from '@/components/seller/SellerPriceRecommendationCard.jsx'
+import AskingPriceTabbedCard from '@/components/seller/AskingPriceTabbedCard.jsx'
+import OfferHandlerCard from '@/components/seller/OfferHandlerCard.jsx'
 import { formatConfidenceBandK } from '@/lib/formatPrice.js'
 import {
-  buildDriverCards,
-  DRIVER_LABELS,
+  buildComparisonDrivers,
   matchAprioriRules,
   pickBestSurrogateRule
 } from '@/lib/buyerExplain.js'
@@ -58,6 +62,7 @@ export default function SellerResultsStepFlow({
   form,
   results,
   rules,
+  globalShapImportance = {},
   askingPrice,
   setAskingPrice,
   cspResult,
@@ -72,7 +77,10 @@ export default function SellerResultsStepFlow({
   handleWhatIfChange,
   onResetWhatIf,
   photoAdjustment,
-  onPhotoAdjustmentChange
+  onPhotoAdjustmentChange,
+  // Bumped by SellerView's floating "Got an offer?" CTA. Each tick opens
+  // step 6 + scrolls + focuses the offer input.
+  offerFocusToken = 0
 }) {
   const stepRef0 = useRef(null)
   const stepRef1 = useRef(null)
@@ -80,6 +88,7 @@ export default function SellerResultsStepFlow({
   const stepRef3 = useRef(null)
   const stepRef4 = useRef(null)
   const stepRef5 = useRef(null)
+  const offerCardRef = useRef(null)
   const stepRefs = useMemo(
     () => [stepRef0, stepRef1, stepRef2, stepRef3, stepRef4, stepRef5],
     []
@@ -125,10 +134,12 @@ export default function SellerResultsStepFlow({
     [primaryApriori, surrogateRule, predicted, askingPrice]
   )
 
-  const { cards: driverCards, marketTimingShap, saleYearNote } = useMemo(
-    () => buildDriverCards(results?.shap?.shap_values, { topN: 4 }),
-    [results?.shap?.shap_values]
+  const { comparisonDrivers, marketTimingShap, saleYearNote } = useMemo(
+    () =>
+      buildComparisonDrivers(results?.shap, globalShapImportance, { topN: 4 }),
+    [results?.shap, globalShapImportance]
   )
+  const driverCards = comparisonDrivers
 
   const aprioriViolated = useMemo(
     () =>
@@ -217,6 +228,26 @@ export default function SellerResultsStepFlow({
     }, 100)
   }, [])
 
+  const scrollToAskingStep = useCallback(() => {
+    setActiveStep(3)
+    window.setTimeout(() => {
+      stepRef3.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
+  }, [])
+
+  // Each tick of `offerFocusToken` (driven by SellerView's floating CTA)
+  // opens step 6, scrolls it into view, and pulls focus into the
+  // OfferHandlerCard's input.
+  useEffect(() => {
+    if (!offerFocusToken) return
+    setActiveStep(5)
+    window.setTimeout(() => {
+      stepRef5.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      window.setTimeout(() => offerCardRef.current?.focusInput?.(), 250)
+    }, 100)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offerFocusToken])
+
   useEffect(() => {
     setActiveStep(0)
     setViewedSteps([false, false, false, false, false, false])
@@ -241,98 +272,33 @@ export default function SellerResultsStepFlow({
   const trendBufferPct = Math.round((suggestedListingMultiplier - 1) * 1000) / 10
   const quickPickTrend = Math.round(predicted * suggestedListingMultiplier)
 
+  const recommendationProperty = {
+    address:
+      [form?.block && `BLK ${form.block}`, form?.streetName].filter(Boolean).join(' · ') ||
+      'Your flat',
+    area: form?.town,
+    flatType: form?.flatType,
+    sqm: form?.floorArea != null ? Number(form.floorArea) : null
+  }
+
   return (
     <div className="space-y-5">
-      <Card className="border-border/60 shadow-sm">
-        <CardHeader className="pb-2">
-          <div className="flex flex-wrap items-start gap-2 text-sm font-semibold text-foreground">
-            <span aria-hidden>🏠</span>
-            <span>{addressLine || 'Your flat'}</span>
-          </div>
-          <CardDescription className="pt-1">
-            AI fair value, confidence band, and price per sqm for your listing context.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-            Our model estimates this flat is worth around{' '}
-            <span className="font-semibold text-foreground">{fmt(predicted)}</span> in{' '}
-            {form?.sale_month || 'the chosen month'}. With your town&apos;s recent {trendBufferPct >= 0 ? '+' : ''}
-            {trendBufferPct}% trend, a typical listing price would be{' '}
-            <span className="font-semibold text-foreground">{fmt(quickPickTrend)}</span>. The
-            sections below show what drives this number, comparable sales, and how to position
-            your asking price.
-          </p>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                AI fair value
-              </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                {fmt(predicted)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {formatConfidenceBandK(low, high)}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Confidence
-              </p>
-              <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm font-semibold text-foreground">
-                {confidenceLevel}
-                <button
-                  type="button"
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-[11px] text-muted-foreground hover:bg-muted/60"
-                  title={confidenceTip}
-                  aria-label={confidenceTip}
-                >
-                  ⓘ
-                </button>
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Band width indicates how tight the model&apos;s range is for similar flats.
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                $/sqm
-              </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                ${results?.predict?.price_per_sqm?.toLocaleString() ?? '—'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-6 border-t border-border/40 pt-4 text-sm text-muted-foreground">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide">Floor</p>
-              <p className="mt-0.5 font-semibold tabular-nums text-muted-foreground">
-                {low != null ? fmt(low) : '—'}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide">Ceiling</p>
-              <p className="mt-0.5 font-semibold tabular-nums text-muted-foreground">
-                {fmt(ceilingDisplay)}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3 border-t border-border/40 pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <Button
-              type="button"
-              size="sm"
-              className="w-full sm:w-auto"
-              onClick={scrollToFirstStep}
-            >
-              See full analysis
-              <ChevronDown className="ml-2 h-4 w-4" aria-hidden />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <SellerPriceRecommendationCard
+        property={recommendationProperty}
+        aiEstimate={predicted}
+        aiLow={low}
+        aiHigh={high}
+        townTrendPct={trendBufferPct}
+        suggestedListPrice={quickPickTrend}
+        pricePerSqm={results?.predict?.price_per_sqm}
+        confidence={String(confidenceLevel || 'medium').toLowerCase()}
+        onSeeFullAnalysis={scrollToFirstStep}
+        onContinue={scrollToAskingStep}
+        onSelectPrice={(price) => {
+          if (typeof setAskingPrice === 'function') setAskingPrice(Math.round(Number(price) || 0))
+          scrollToAskingStep()
+        }}
+      />
 
       <PhotoRefineCard
         basePrice={predicted}
@@ -400,7 +366,7 @@ export default function SellerResultsStepFlow({
             ref={stepRef1}
             stepIndex={1}
             title="What drives your valuation"
-            subtitle="Largest dollar contributions in the hybrid model (excl. pure timing in the grid)"
+            subtitle="The 4 factors that most influence your flat's estimated value"
             expanded={activeStep === 1}
             onToggle={onToggleStep}
             viewed={viewedSteps[1]}
@@ -409,80 +375,15 @@ export default function SellerResultsStepFlow({
             onNext={() => handleStepComplete(1)}
             loading={false}
           >
-            <p className="text-xs text-muted-foreground">{beforeYouList}</p>
-            {results?.shap?.shap_values?.length > 0 ? (
-              <>
-                {results?.shap?.explanation_type === 'global' && (
-                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900 dark:bg-amber-950/30">
-                    <p className="text-xs text-amber-800 dark:text-amber-200">
-                      ⚠️ Showing average feature importance — per-prediction explanation unavailable
-                      for this flat.
-                      {results?.shap?.fallback_reason ? (
-                        <span className="mt-1 block text-[11px] opacity-90">
-                          {results.shap.fallback_reason}
-                        </span>
-                      ) : null}
-                    </p>
-                  </div>
-                )}
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  {driverCards.map((driver) => (
-                    <div
-                      key={driver.feature}
-                      className="rounded-xl border border-border/60 bg-card p-4"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <span className="text-xl">{driver.icon}</span>
-                          <p className="mt-1 text-sm font-semibold text-foreground">{driver.label}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {driver.featureText}
-                            {DRIVER_LABELS[driver.feature]?.direction
-                              ? ` · ${DRIVER_LABELS[driver.feature].direction}`
-                              : ''}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p
-                            className={`text-sm font-bold tabular-nums ${
-                              driver.shap > 0 ? 'text-emerald-600' : 'text-red-500'
-                            }`}
-                          >
-                            {driver.shap > 0 ? '+' : ''}
-                            {fmt(driver.shap)}
-                          </p>
-                          <p className="text-xs text-muted-foreground">to price</p>
-                        </div>
-                      </div>
-                      <div className="mt-2 h-1.5 rounded-full bg-muted">
-                        <div
-                          className="h-1.5 rounded-full bg-emerald-400"
-                          style={{ width: `${Math.min(100, driver.pct)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {Math.abs(marketTimingShap) > 0.01 && (
-                  <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 dark:border-sky-900 dark:bg-sky-950/30">
-                    <p className="text-xs text-sky-900 dark:text-sky-100">
-                      <span className="font-semibold">
-                        📈 Market tailwind {marketTimingShap >= 0 ? '+' : '−'}
-                        {fmt(Math.abs(marketTimingShap))}
-                      </span>
-                      {' — '}
-                      the broader {saleYearNote || new Date().getFullYear()} market{' '}
-                      {marketTimingShap >= 0 ? 'is lifting' : 'is pulling down'} prices for all flats
-                      like yours, not just this one. Already baked into your fair value.
-                    </p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
-                No per-factor breakdown available — the fair value above still reflects the full model.
-              </p>
+            {beforeYouList && (
+              <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 dark:border-sky-900 dark:bg-sky-950/30">
+                <p className="text-xs leading-relaxed text-sky-900 dark:text-sky-100">
+                  <span className="font-semibold">💡 Before you list: </span>
+                  {beforeYouList}
+                </p>
+              </div>
             )}
+            <CompositeShapPanel flat={baseFlat} />
           </BuyerStepCard>
 
           <BuyerStepCard
@@ -532,113 +433,25 @@ export default function SellerResultsStepFlow({
             onNext={() => handleStepComplete(3)}
             loading={false}
           >
-            <p className="text-xs text-muted-foreground">
-              The input below is anchored at the <strong>fair market estimate</strong> from the model.
-              Use the quick picks to explore wider bands — each label explains where the number comes
-              from. We validate against Apriori and surrogate rules as you type.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setAskingPrice(quickPickAi)}
-                title="Reset to the model's fair market estimate"
-              >
-                Fair estimate ({fmt(quickPickAi)})
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setAskingPrice(quickPickPlus3)}
-              >
-                +3% buffer ({fmt(quickPickPlus3)})
-              </Button>
-              {Math.abs(trendBufferPct) >= 0.5 && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setAskingPrice(quickPickTrend)}
-                  title={`Based on recent town-level YoY trend (${trendBufferPct >= 0 ? '+' : ''}${trendBufferPct}%)`}
-                >
-                  Town trend ({trendBufferPct >= 0 ? '+' : ''}{trendBufferPct}% · {fmt(quickPickTrend)})
-                </Button>
-              )}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setAskingPrice(quickPickHigh)}
-              >
-                Confidence high ({fmt(quickPickHigh)})
-              </Button>
-            </div>
-            <div className="mt-4 grid gap-6 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)]">
-              <div>
-                <FormField label="Your asking price (SGD)">
-                  <Input
-                    id="seller-asking-price"
-                    type="number"
-                    min={0}
-                    value={askingPrice ?? ''}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      setAskingPrice(v === '' ? null : Number(v))
-                    }}
-                    className="h-9 max-w-xs"
-                  />
-                </FormField>
-                <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                  <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-                    Below floor — risk underpricing
-                  </span>
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-                    Fair zone
-                  </span>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
-                    Above ceiling — may deter buyers
-                  </span>
-                </div>
-              </div>
-              <div>
-                {askingPrice ? (
-                  <AskingPriceSummary
-                    askingPrice={askingPrice}
-                    predicted={predicted}
-                    low={low}
-                    high={ceilingDisplay}
-                  />
-                ) : (
-                  <p className="text-xs text-muted-foreground">Enter a price to see the summary.</p>
-                )}
-                {cspLoading && (
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    Checking your asking price against market rules…
-                  </p>
-                )}
-              </div>
-            </div>
+            <AskingPriceTabbedCard
+              property={recommendationProperty}
+              aiEstimate={predicted}
+              aiLow={low}
+              aiHigh={ceilingDisplay}
+              recentSalesMedian={results?.predict?.cbr_check?.cbr_median ?? predicted}
+              recentSalesSampleSize={comparables?.length ?? 5}
+              suggestedListPrice={quickPickTrend}
+              townTrendPct={trendBufferPct}
+              askingPrice={askingPrice}
+              setAskingPrice={setAskingPrice}
+              hideStepBanner
+            />
             <CSPBanner
               cspResult={cspResult}
               askingPrice={askingPrice}
               predictedPrice={predicted}
               loading={cspLoading}
             />
-            {askingPrice && predicted != null && (
-              <div className="mt-6">
-                <PriceRangeCard
-                  aiEstimate={predicted}
-                  cbrMedian={results?.predict?.cbr_check?.cbr_median ?? predicted}
-                  listingPrice={askingPrice}
-                  confidenceLow={low ?? predicted * 0.92}
-                  confidenceHigh={ceilingDisplay}
-                  cbrSampleSize={comparables?.length ?? 5}
-                  onEditListing={() => setAskingPrice(null)}
-                />
-              </div>
-            )}
           </BuyerStepCard>
 
           <BuyerStepCard
@@ -659,9 +472,6 @@ export default function SellerResultsStepFlow({
               &quot;the lease is short&quot; or &quot;it&apos;s a low floor&quot;, you&apos;ll know exactly how much
               that&apos;s worth — and how much to concede.
             </p>
-            <div className="mt-2 text-[11px] text-muted-foreground">
-              Sliders send debounced requests to the same predict/SHAP path as your main analysis.
-            </div>
             <div className="mt-4">
               <WhatIfSimulator
                 basePrice={predicted}
@@ -685,7 +495,7 @@ export default function SellerResultsStepFlow({
             ref={stepRef5}
             stepIndex={5}
             title="Your negotiation strategy"
-            subtitle="Range from counterfactuals plus listing anchor"
+            subtitle="Your price range, suggested listing, and how to handle buyer pushback"
             expanded={activeStep === 5}
             onToggle={onToggleStep}
             viewed={viewedSteps[5]}
@@ -694,28 +504,22 @@ export default function SellerResultsStepFlow({
             onNext={() => handleStepComplete(5)}
             loading={false}
           >
-            {results.cf ? (
-              <NegotiationRange
-                cf={results.cf}
-                predicted={predicted}
-                listingMultiplier={suggestedListingMultiplier}
-                suggestedListingNote={suggestedNote}
-              />
-            ) : (
-              <p className="text-xs text-muted-foreground">Negotiation data unavailable.</p>
-            )}
-            {tactics.length > 0 && (
-              <div className="mt-6">
-                <p className="text-xs font-semibold text-foreground">Tactics to prepare</p>
-                <ol className="mt-2 list-decimal space-y-2 pl-5 text-xs text-muted-foreground">
-                  {tactics.map((t, i) => (
-                    <li key={i} className="leading-relaxed">
-                      {t}
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
+            <OfferHandlerCard
+              ref={offerCardRef}
+              askingPrice={askingPrice}
+              predicted={predicted}
+              aiLow={low}
+              aiHigh={high}
+              cbrMedian={results?.predict?.cbr_check?.cbr_median}
+              comparables={comparables}
+              town={form?.town}
+              townTrendPct={trendBufferPct}
+              remainingLeaseYears={
+                results?.baseFlatPayload?.remaining_lease_years ?? form?.remainingLease
+              }
+              driverCards={driverCards}
+              aprioriViolated={aprioriViolated}
+            />
           </BuyerStepCard>
         </div>
       </div>

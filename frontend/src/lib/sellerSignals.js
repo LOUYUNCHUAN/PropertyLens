@@ -5,12 +5,14 @@ import {
 } from '@/lib/buyerExplain.js'
 import { formatConfidenceBandK } from '@/lib/formatPrice.js'
 
-/** Normalize outcome strings from rules / humanizeOutcome for display. */
+/** Normalize outcome strings from rules / humanizeOutcome for display.
+ *  Thresholds mirror data/artifacts/hybrid_xai/rules.json `metadata.price_thresholds`
+ *  (budget_upper=500k, premium_lower=650k); refresh if the miner reruns with new bins. */
 export function humanizePriceBand(raw) {
   const s = String(raw || '').toLowerCase()
-  if (s.includes('budget')) return 'budget range (under $350k)'
-  if (s.includes('premium')) return 'premium range (above $550k)'
-  if (s.includes('mid')) return 'mid range (about $350k–$500k)'
+  if (s.includes('budget')) return 'budget range (under $500k)'
+  if (s.includes('premium')) return 'premium range (≥$650k)'
+  if (s.includes('mid')) return 'mid range ($500k–$650k)'
   return 'a typical market band for this profile'
 }
 
@@ -37,12 +39,21 @@ export function humanizeAprioriWarning(v) {
   if (!v) return ''
   const msg = String(v.message || '').trim()
   if (v.expected != null && v.actual != null) {
-    const exp = String(v.expected)
-    const act = String(v.actual)
+    // Both surrogate and model_band send DOLLAR strings, not band tokens —
+    // surface their backend-formatted message as-is. humanizePriceBand would
+    // otherwise fall through to "a typical market band for this profile",
+    // which makes the violation card unreadable.
     if (v.source === 'surrogate') {
-      return `${msg ? `${msg} ` : ''}The model bracket centres around ${exp}; your ask lines up closer to ${act}.`
+      return msg ||
+        `A simpler decision-tree reference suggests around ${v.expected}; your ask is ${v.actual}.`
     }
-    return `${msg ? `${msg} ` : ''}For this pattern we usually see around ${exp}; your listing is framed closer to ${act}.`
+    if (v.source === 'model_band') {
+      return msg ||
+        `Asking ${v.actual} is outside the AI estimate's confidence band (${v.expected}).`
+    }
+    const exp = humanizePriceBand(v.expected)
+    const act = humanizePriceBand(v.actual)
+    return `Flats matching this profile usually trade in the ${exp}; your ask is framed in the ${act}.`
   }
   return msg || 'This check flagged a mismatch with typical market patterns.'
 }
@@ -74,14 +85,14 @@ export function buildSignalCards(
       cards.push({
         icon: fits ? '📊' : '⚠️',
         type: fits ? 'ok' : 'warn',
-        title: 'Market pattern (Apriori)',
+        title: 'Market pattern',
         body: `Flats with ${condText || 'this profile'} often trade in ${expectedBand}. Your asking price ${matchPhrase}.`
       })
     } else {
       cards.push({
         icon: '📊',
         type: 'info',
-        title: 'Market pattern (Apriori)',
+        title: 'Market pattern',
         body: `Flats with ${condText || 'this profile'} often align with ${expectedBand}. Add an asking price in the next step to see how your listing compares to this pattern.`
       })
     }
@@ -91,8 +102,8 @@ export function buildSignalCards(
     cards.push({
       icon: '🌿',
       type: 'info',
-      title: 'Model rule (surrogate)',
-      body: `Among ${(surrogateRule.samples || 0).toLocaleString()} similar transactions, a typical level is around ${fmt(surrogateRule.then_price)}.`
+      title: 'Rule-of-thumb cross-check',
+      body: `A rule-of-thumb cross-check based on ${(surrogateRule.samples || 0).toLocaleString()} similar transactions points to around ${fmt(surrogateRule.then_price)}.`
     })
   }
 

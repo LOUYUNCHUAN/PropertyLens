@@ -1,11 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import api, {
   geocodeAddress,
+  getGlobalSHAP,
   getNearbyAmenities,
   getRules,
   getTrends
 } from '../api/client.js'
 import SellerResultsStepFlow from '@/components/seller/SellerResultsStepFlow.jsx'
+import { HandCoins } from 'lucide-react'
 import { TOWNS } from '../constants/towns.js'
 import { FLAT_TYPES } from '@/constants/flatTypes.js'
 import { STOREY_PRESETS } from '@/constants/storeyPresets.js'
@@ -28,6 +30,7 @@ import {
 } from '@/components/ui/select'
 import {
   applyNearbyToFlatPayload,
+  applyWhatIfOverrides,
   buildHybridFlatPayload,
   defaultSaleMonth,
   parseStoreyMid,
@@ -155,6 +158,9 @@ export default function SellerView() {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [suggestedListingMultiplier, setSuggestedListingMultiplier] = useState(1.03)
   const [photoAdjustment, setPhotoAdjustment] = useState(null)
+  // Each tick of this counter opens step 6 + scrolls + focuses the offer
+  // input. Driven by the floating "Got an offer?" CTA at view level.
+  const [offerFocusToken, setOfferFocusToken] = useState(0)
 
   const [whatIfStorey, setWhatIfStorey] = useState(8)
   const [whatIfLease, setWhatIfLease] = useState(67)
@@ -163,6 +169,7 @@ export default function SellerView() {
   const [whatIfShap, setWhatIfShap] = useState(null)
   const [whatIfLoading, setWhatIfLoading] = useState(false)
   const [rules, setRules] = useState(null)
+  const [globalShapImportance, setGlobalShapImportance] = useState({})
   const [resultsKey, setResultsKey] = useState(0)
   const debounceRef = useRef(null)
   const cspDebounceRef = useRef(null)
@@ -226,11 +233,13 @@ export default function SellerView() {
         }
       }
 
-      const [predictRes, shapRes, cbrRes] = await Promise.all([
+      const [predictRes, shapRes, cbrRes, globalRes] = await Promise.all([
         api.post('/api/predict', flat),
         api.post('/api/explain/shap', { flat }),
-        api.post('/api/cbr/similar', { flat, k: 6 })
+        api.post('/api/cbr/similar', { flat, k: 6 }),
+        getGlobalSHAP().catch(() => ({ shap_importance: {} }))
       ])
+      setGlobalShapImportance(globalRes?.shap_importance ?? {})
 
       const predictedPrice = predictRes.data.predicted_price
 
@@ -282,14 +291,16 @@ export default function SellerView() {
     if (!baseFlatPayload) return
     setWhatIfLoading(true)
     try {
-      const { block, street_name, sale_month, storey_range, ...basePayload } =
-        baseFlatPayload
-      const modified = {
-        ...basePayload,
+      // Keep address fields (block/street/sale_month) so the backend stays on
+      // the feature-table path — POI features match the main prediction.
+      // applyWhatIfOverrides rewrites storey_range + lease_commence_date to
+      // reflect the overrides, so the address-path uses the new values.
+      const modified = applyWhatIfOverrides(baseFlatPayload, {
         storey_mid: storey,
         remaining_lease_years: lease,
         floor_area_sqm: area
-      }
+      })
+      if (!modified) return
       const [predRes, shapRes] = await Promise.all([
         api.post('/api/predict', modified),
         api.post('/api/explain/shap', { flat: modified })
@@ -347,7 +358,10 @@ export default function SellerView() {
       try {
         const payload = {
           asking_price: askingPrice,
-          flat
+          flat,
+          predicted_price: results.predict?.predicted_price,
+          confidence_low: results.predict?.confidence_low,
+          confidence_high: results.predict?.confidence_high
         }
         const resp = await api.post('/api/validate-listing', payload)
         setCspResult(resp.data)
@@ -639,6 +653,7 @@ export default function SellerView() {
           form={form}
           results={results}
           rules={rules}
+          globalShapImportance={globalShapImportance}
           askingPrice={askingPrice}
           setAskingPrice={setAskingPrice}
           cspResult={cspResult}
@@ -654,7 +669,25 @@ export default function SellerView() {
           onResetWhatIf={resetWhatIf}
           photoAdjustment={photoAdjustment}
           onPhotoAdjustmentChange={setPhotoAdjustment}
+          offerFocusToken={offerFocusToken}
         />
+      )}
+
+      {/* Floating "Got an offer?" CTA — only after results AND an asking
+          price are set (otherwise the offer card has nothing to anchor to).
+          Sits at the same bottom edge as the ChatBot bubble, immediately to
+          its left, with matching primary colour for visual consistency. */}
+      {results && askingPrice != null && askingPrice > 0 && (
+        <button
+          type="button"
+          onClick={() => setOfferFocusToken((t) => t + 1)}
+          className="fixed bottom-6 right-24 z-[1100] inline-flex h-14 items-center gap-2 rounded-full border-0 bg-primary px-5 text-[14px] font-bold text-primary-foreground shadow-lg shadow-primary/40 transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+          aria-label="Got an offer? Open the offer-handler card."
+          title="Jump to step 6 and analyse the buyer's offer"
+        >
+          <HandCoins className="h-4 w-4" aria-hidden />
+          <span>Got an offer?</span>
+        </button>
       )}
     </div>
   )

@@ -51,6 +51,54 @@ export function remainingLeaseApprox(leaseCommenceYear, saleMonthStr) {
 }
 
 /**
+ * Apply what-if overrides to a base /api/predict payload WITHOUT stripping
+ * the address fields. Keeps the backend on the address-builder path so the
+ * feature-table POI values stay consistent with the main prediction — only
+ * storey, lease, and floor area change.
+ *
+ * The three derived fields are:
+ *   - storey_range    : narrow band around the override mid ("08 TO 08")
+ *   - lease_commence_date : back-computed from saleYear + newLease − 99,
+ *                           clamped to the backend's [1960, 2035] range
+ *   - remaining_lease_years : echoed for downstream code that still reads it
+ */
+export function applyWhatIfOverrides(baseFlat, overrides) {
+  if (!baseFlat || typeof baseFlat !== 'object') return null
+  const {
+    storey_mid,
+    remaining_lease_years,
+    floor_area_sqm
+  } = overrides || {}
+
+  const saleMonth = baseFlat.sale_month || defaultSaleMonth()
+  const saleYear =
+    parseInt(String(saleMonth).slice(0, 4), 10) || new Date().getFullYear()
+
+  const mid = Math.max(1, Math.round(Number(storey_mid) || baseFlat.storey_mid || 8))
+  const storey_range = `${String(mid).padStart(2, '0')} TO ${String(mid).padStart(2, '0')}`
+
+  const leaseRaw =
+    Number(remaining_lease_years) || Number(baseFlat.remaining_lease_years) || 70
+  const lease = Math.max(1, Math.min(99, Math.round(leaseRaw)))
+  const leaseCommenceRaw = saleYear + lease - 99
+  const lease_commence_date = Math.max(1960, Math.min(2035, leaseCommenceRaw))
+
+  const area =
+    Number(floor_area_sqm) || Number(baseFlat.floor_area_sqm) || 90
+
+  return {
+    ...baseFlat,
+    storey_range,
+    storey_mid: mid,
+    remaining_lease_years: lease,
+    floor_area_sqm: area,
+    lease_commence_date,
+    year: saleYear,
+    month_num: parseInt(String(saleMonth).slice(5, 7), 10) || baseFlat.month_num
+  }
+}
+
+/**
  * @param {object} f - block, street_name, town, flat_type, floor_area_sqm, storey_range, lease_commence_date, sale_month
  */
 export function buildHybridFlatPayload(f) {

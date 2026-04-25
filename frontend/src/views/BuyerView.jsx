@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { HandCoins, Loader2 } from 'lucide-react'
 import {
   predictPrice,
   getSHAP,
@@ -101,6 +101,9 @@ function buildInitialForm() {
 export default function BuyerView() {
   const { username } = useAuth()
   const [form, setForm] = useState(() => buildInitialForm())
+  // Tick counter; bumped by the floating "Plan your offer" CTA → opens
+  // step 5 (negotiation) and focuses its planned-offer input.
+  const [offerFocusToken, setOfferFocusToken] = useState(0)
   const [listingPrice, setListingPrice] = useState(() => {
     const p = new URLSearchParams(window.location.search).get('asking_price')
     if (p && !Number.isNaN(Number(p))) return p
@@ -649,10 +652,28 @@ export default function BuyerView() {
                 mapStoreyRange={form.storey_range}
                 mapLeaseCommence={form.lease_commence_date}
                 mapSaleMonth={form.sale_month}
+                offerFocusToken={offerFocusToken}
               />
             </>
           )}
         </>
+      )}
+
+      {/* Floating "Plan your offer" CTA — only after a prediction AND an
+          asking price are entered (otherwise the offer plan has nothing to
+          anchor against). Sits at the same bottom edge as the ChatBot
+          bubble, immediately to its left, with matching primary colour. */}
+      {prediction && listingAsNumber != null && listingAsNumber > 0 && (
+        <button
+          type="button"
+          onClick={() => setOfferFocusToken((t) => t + 1)}
+          className="fixed bottom-6 right-24 z-[1100] inline-flex h-14 items-center gap-2 rounded-full border-0 bg-primary px-5 text-[14px] font-bold text-primary-foreground shadow-lg shadow-primary/40 transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+          aria-label="Plan your offer — open the buyer offer planner."
+          title="Jump to step 5 and plan your offer with bands + evidence"
+        >
+          <HandCoins className="h-4 w-4" aria-hidden />
+          <span>Plan your offer</span>
+        </button>
       )}
     </div>
   )

@@ -4,3 +4,9 @@ export function formatConfidenceBandK(low, high) {
   const b = Math.round(Number(high) / 1000)
   return `S$${a}k – S$${b}k`
 }
+
+/** Full precision Singapore-dollar price for emphasis rows (e.g. bar values, asking price). */
+export function formatPrice(n) {
+  const v = Math.round(Number(n) || 0)
+  return `S$${v.toLocaleString('en-SG')}`
+}

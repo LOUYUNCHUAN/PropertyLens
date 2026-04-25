@@ -68,37 +68,54 @@ export function roomCountFromFlatType(flatType) {
 }
 
 /**
- * Discretize flat for Apriori if_conditions (strings in rules.json).
- * @param {object} flat - API payload (floor_area_sqm, remaining_lease_years, dist_nearest_mrt_km km, flat_type)
+ * Discretize flat for Apriori if_conditions in rules.json. Token format MUST
+ * stay aligned with `scripts/regenerate_rules.py::discretise()` and the
+ * `data/artifacts/hybrid_xai/rules.json` metadata — if either side changes
+ * its bin boundaries, both sides must be updated together.
+ *
+ * @param {object} flat - PredictRequest-shaped payload (floor_area_sqm,
+ *   remaining_lease_years, dist_nearest_mrt_km, flat_type, storey_mid,
+ *   is_mature_estate)
  */
 export function bucketizeFlat(flat) {
   const sqm = Number(flat?.floor_area_sqm) || 0
   const lease = Number(flat?.remaining_lease_years) || 0
-  const mrtKm = Number(flat?.dist_nearest_mrt_km) ?? 0.5
-  const area =
-    sqm < 70 ? 'small(<70sqm)' : sqm < 90 ? 'medium(70-90sqm)' : 'large(>90sqm)'
-  const leaseB =
-    lease < 55 ? 'short(<55yr)' : lease < 70 ? 'medium(55-70yr)' : 'long(>70yr)'
-  const mrt =
-    mrtKm < 0.5 ? 'close(<500m)' : mrtKm < 0.8 ? 'medium(500-800m)' : 'far(>800m)'
-  const rooms = String(roomCountFromFlatType(flat?.flat_type))
+  const mrtKm = Number(flat?.dist_nearest_mrt_km ?? 0.5)
+  const rooms = roomCountFromFlatType(flat?.flat_type)
   const levelMid = Number(flat?.storey_mid) || 8
+  const isMature = Number(flat?.is_mature_estate ?? 0) === 1
+
+  const area =
+    sqm < 70 ? 'small(<70sqm)'
+    : sqm < 100 ? 'medium(70-100sqm)'
+    : 'large(>=100sqm)'
+  const leaseB =
+    lease < 55 ? 'short(<55yr)'
+    : lease < 80 ? 'medium(55-80yr)'
+    : 'long(>=80yr)'
+  const mrt =
+    mrtKm < 0.5 ? 'walking(<0.5km)'
+    : mrtKm < 0.8 ? 'near(0.5-0.8km)'
+    : 'far(>0.8km)'
+  const roomsB = rooms <= 3 ? '2-3' : rooms === 4 ? '4' : '5+'
   const storey =
-    levelMid <= 5 ? 'low(1-5)' : levelMid <= 12 ? 'mid(6-12)' : 'high(>12)'
-  return { area, lease: leaseB, mrt, rooms, storey }
+    levelMid <= 5 ? 'low(1-5)'
+    : levelMid <= 12 ? 'mid(6-12)'
+    : 'high(>12)'
+  const mature = isMature ? 'yes' : 'no'
+
+  return { area, lease: leaseB, mrt, rooms: roomsB, storey, mature }
 }
 
 function condMatchesBucket(cond, buckets) {
   const c = String(cond)
-  if (c.includes('area=')) return c.includes(buckets.area)
-  if (c.includes('lease=')) return c.includes(buckets.lease)
-  if (c.includes('mrt=')) return c.includes(buckets.mrt)
-  if (c.includes('rooms=')) {
-    const want = c.match(/rooms=(\d)/)
-    return want && buckets.rooms === want[1]
-  }
-  if (c.includes('storey=')) return c.includes(buckets.storey)
-  return true
+  if (c.startsWith('area=')) return c === `area=${buckets.area}`
+  if (c.startsWith('lease=')) return c === `lease=${buckets.lease}`
+  if (c.startsWith('mrt=')) return c === `mrt=${buckets.mrt}`
+  if (c.startsWith('rooms=')) return c === `rooms=${buckets.rooms}`
+  if (c.startsWith('storey=')) return c === `storey=${buckets.storey}`
+  if (c.startsWith('mature_estate=')) return c === `mature_estate=${buckets.mature}`
+  return true   // unknown dimension — don't reject the rule on its account
 }
 
 export function matchAprioriRules(flat, aprioriRules) {
@@ -191,19 +208,23 @@ export function humanizeConditions(conditions) {
   return conditions
     .map((c) => {
       const s = String(c)
-      if (s.includes('area=small')) return 'small floor area (under 70sqm)'
-      if (s.includes('area=medium')) return 'medium floor area (70–90sqm)'
-      if (s.includes('area=large')) return 'large floor area (over 90sqm)'
+      if (s.includes('area=small')) return 'small floor area (under 70 sqm)'
+      if (s.includes('area=medium')) return 'medium floor area (70–100 sqm)'
+      if (s.includes('area=large')) return 'large floor area (100+ sqm)'
       if (s.includes('lease=short')) return 'short remaining lease (under 55 years)'
-      if (s.includes('lease=medium')) return 'medium lease (55–70 years)'
-      if (s.includes('lease=long')) return 'long lease (over 70 years)'
-      if (s.includes('mrt=far')) return 'MRT station far away (over 800m)'
-      if (s.includes('mrt=medium')) return 'MRT station at medium distance (500–800m)'
-      if (s.includes('mrt=close')) return 'MRT station nearby (under 500m)'
-      if (s.includes('rooms=3')) return '3-room layout'
+      if (s.includes('lease=medium')) return 'medium lease (55–80 years)'
+      if (s.includes('lease=long')) return 'long lease (80+ years)'
+      if (s.includes('mrt=walking')) return 'MRT walking distance (under 500 m)'
+      if (s.includes('mrt=near')) return 'MRT nearby (500–800 m)'
+      if (s.includes('mrt=far')) return 'MRT far (over 800 m)'
+      if (s.includes('rooms=2-3')) return '2–3 room layout'
       if (s.includes('rooms=4')) return '4-room layout'
-      if (s.includes('rooms=5')) return '5-room layout'
+      if (s.includes('rooms=5+')) return '5+ room layout'
       if (s.includes('storey=low')) return 'low floor (1–5)'
+      if (s.includes('storey=mid')) return 'mid floor (6–12)'
+      if (s.includes('storey=high')) return 'high floor (above 12)'
+      if (s.includes('mature_estate=yes')) return 'mature estate'
+      if (s.includes('mature_estate=no')) return 'non-mature estate'
       return s
     })
     .join(', ')
@@ -214,15 +235,17 @@ export function humanizeOutcome(thenArr) {
   const priceOutcome = thenArr.find((t) => String(t).includes('price='))
   if (!priceOutcome) return 'a typical market price'
   const t = String(priceOutcome)
-  if (t.includes('budget')) return 'a budget price range (under $350k)'
-  if (t.includes('mid')) return 'a mid-range price ($350k–$500k)'
-  if (t.includes('premium')) return 'a premium price (above $550k)'
+  // Thresholds mirror rules.json metadata.price_thresholds (budget_upper=500k, premium_lower=650k).
+  if (t.includes('budget')) return 'a budget price range (under $500k)'
+  if (t.includes('mid')) return 'a mid-range price ($500k–$650k)'
+  if (t.includes('premium')) return 'a premium price (≥$650k)'
   return t
 }
 
 export function assessMatch(askingPrice, predictedPrice, rule) {
   const thenStr = (rule?.then || []).join(' ')
-  if (thenStr.includes('budget') && askingPrice > 400000)
+  // Boundaries follow rules.json price_thresholds: budget<500k, premium>=650k.
+  if (thenStr.includes('budget') && askingPrice > 500000)
     return 'is listed above what this pattern usually suggests'
   if (thenStr.includes('premium') && askingPrice < predictedPrice * 0.95)
     return 'is listed below the premium range this pattern often sees'
@@ -269,8 +292,8 @@ export const DRIVER_LABELS = {
   mall_weighted_access_3km: {
     icon: '🛍️',
     label: 'Mall access',
-    format: () => 'nearby malls weighted score',
-    direction: 'more malls = higher price'
+    format: () => 'malls within 3km',
+    direction: 'more = higher price'
   },
   dist_to_foodcourt_m: {
     icon: '🍜',
@@ -300,7 +323,12 @@ export const DRIVER_LABELS = {
 
 export function buildDriverCards(shapValues, { topN = 4 } = {}) {
   const arr = Array.isArray(shapValues)
-    ? shapValues.filter((v) => v && !HIDDEN_SHAP.includes(v.feature))
+    ? shapValues.filter(
+        (v) =>
+          v &&
+          !HIDDEN_SHAP.includes(v.feature) &&
+          !_featureExcludedFromDrivers(v.feature)
+      )
     : []
   const sorted = [...arr].sort((a, b) => Math.abs(b.shap_value) - Math.abs(a.shap_value))
   const timing = sorted.find((x) => x.feature === 'transaction_year')
@@ -501,6 +529,7 @@ export function buildNegotiationGuide({
   askingPrice
 }) {
   const predicted = prediction?.predicted_price
+  const confidenceHigh = prediction?.confidence_high
   const gap = gapPct(askingPrice, predicted)
   const gapSig = gapSignalFromPct(gap)
   const cbrDiv = cbrCheck?.divergence_pct
@@ -521,40 +550,102 @@ export function buildNegotiationGuide({
   if (cbrDiv != null && cbrDiv < -8) openingOffer = Math.min(openingOffer, predicted * 0.92)
   openingOffer = Math.round(openingOffer / 1000) * 1000
 
-  const notes = buildNotes({
+  const targetPrice = predicted ? Math.round(predicted / 1000) * 1000 : null
+  const walkAway =
+    Number.isFinite(Number(confidenceHigh))
+      ? Math.round(Number(confidenceHigh) / 1000) * 1000
+      : null
+
+  const topDrivers = [...arr]
+    .filter((v) => v && v.feature !== 'transaction_year')
+    .sort((a, b) => Math.abs(b.shap_value || 0) - Math.abs(a.shap_value || 0))
+    .slice(0, 2)
+
+  const tactics = buildNotes({
     gapSig,
+    gap,
     marketDriven,
     rulesViolated,
     cbrDivergence: cbrDiv,
-    askingPrice,
-    predicted
+    topDrivers,
+    openingOffer,
+    targetPrice,
+    walkAway
   })
 
   return {
     verdict: gapSig,
     openingOffer,
+    targetPrice,
+    walkAway,
     marketDriven,
     rulesViolated,
     cbrBelow: cbrDiv != null && cbrDiv < -8,
-    notes,
+    notes: tactics,
+    topDrivers,
     marketTimingPct: Math.round(marketTimingPct)
   }
 }
 
-function buildNotes({ gapSig, marketDriven, rulesViolated, cbrDivergence, askingPrice, predicted }) {
+function driverHumanName(driver) {
+  if (!driver) return null
+  const meta = DRIVER_LABELS[driver.feature]
+  return meta?.label ? meta.label.toLowerCase() : String(driver.feature).replace(/_/g, ' ')
+}
+
+function buildNotes({
+  gapSig,
+  gap,
+  marketDriven,
+  rulesViolated,
+  cbrDivergence,
+  topDrivers,
+  openingOffer,
+  targetPrice,
+  walkAway
+}) {
   const notes = []
-  if (gapSig === 'overpriced' || gapSig === 'slightly_high')
-    notes.push('The AI model suggests the listing is at a premium versus its fair value estimate.')
-  if (cbrDivergence != null && cbrDivergence < -8)
+  const fmtK = (v) =>
+    Number.isFinite(Number(v)) ? `S$${Math.round(Number(v) / 1000)}k` : null
+
+  if (gapSig === 'overpriced' && Number.isFinite(gap))
     notes.push(
-      `Recent comparable sales averaged about ${Math.abs(Math.round(cbrDivergence))}% ${cbrDivergence < 0 ? 'below' : 'above'} the AI estimate — use comparables as a negotiation anchor.`
+      `Asking is about ${Math.round(gap)}% above the model estimate — lead with data and cite 2–3 close comps from the table above.`
     )
+  else if (gapSig === 'slightly_high')
+    notes.push(
+      'Asking is slightly above the model estimate — a modest counter backed by comparables is reasonable.'
+    )
+
+  if (cbrDivergence != null && cbrDivergence < -5)
+    notes.push(
+      `Recent comparables sold about ${Math.abs(Math.round(cbrDivergence))}% below the AI estimate — use the lowest comp as your anchor.`
+    )
+
+  const negDriver = (topDrivers || []).find((d) => (d?.shap_value || 0) < 0)
+  if (negDriver) {
+    const name = driverHumanName(negDriver)
+    if (name)
+      notes.push(
+        `Mention ${name} as a value-reducing factor — the model already flags it.`
+      )
+  }
+
   if (marketDriven)
     notes.push(
-      'A large share of this price reflects current market timing, not only this flat’s features — that is common across listings right now.'
+      'A large share of this price reflects current market timing, not only this flat’s features — common across listings right now.'
     )
   if (rulesViolated)
-    notes.push('Pattern analysis suggests this flat type often trades in a lower price band than this asking price.')
+    notes.push(
+      'Pattern analysis suggests this flat type often trades in a lower price band than this asking price.'
+    )
+
+  const openK = fmtK(openingOffer)
+  const targetK = fmtK(targetPrice)
+  const walkK = fmtK(walkAway)
+  if (openK && targetK && walkK)
+    notes.push(`Start at ${openK}, target ${targetK}, walk away above ${walkK}.`)
+
   if (notes.length === 0)
     notes.push('No major red flags from the model — focus on timeline, inclusions, and any defects.')
   return notes
