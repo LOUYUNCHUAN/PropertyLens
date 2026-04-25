@@ -1,12 +1,12 @@
+# Patterns containing slashes use a leading **/ so they match at any depth.
+# This keeps gitignore correct under the IRS-PM SystemCode/ layout and the
+# legacy flat layout alike.
+
 # ── Legacy notebook pipeline paths ─────────────────────────────────
-01_data_layer/raw/
-01_data_layer/raw
-02_feature_layer/training/outputs/
-02_feature_layer/training/outputs
-03_ml_layer/training/outputs/
-03_ml_layer/training/outputs
-03_ml_layer/test/outputs/
-03_ml_layer/test/outputs
+**/01_data_layer/raw/
+**/02_feature_layer/training/outputs/
+**/03_ml_layer/training/outputs/
+**/03_ml_layer/test/outputs/
 
 # ── OS / editor / Python ───────────────────────────────────────────
 .claude/
@@ -25,53 +25,62 @@ __pycache__/
 .env
 
 # ── Node / frontend ────────────────────────────────────────────────
-backend/.venv/
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
+**/backend/.venv/
+**/frontend/node_modules/
+**/frontend/dist/
+**/frontend/.vite/
 
-# ── Large / downloaded data (not in git — use notebooks/00_project_setup_environment.ipynb) ──
-data/processed/
-data/artifacts/
-data/feature_data/
-data/raw/
+# ── Large / downloaded data (pulled by download_artifacts_from_hf.ipynb) ──
+**/data/processed/
+**/data/artifacts/
+**/data/feature_data/
+**/data/raw/
 # Amenity CSVs are small fixtures; keep large raw schooling extracts out of git
-data/amenities/sgschooling_*.csv
-data/amenities/*.bak
-data/propertylens.db
-data/propertylens.db-journal
-data/propertylens.db-wal
-data/propertylens.db-shm
+**/data/amenities/sgschooling_*.csv
+**/data/amenities/*.bak
+**/data/propertylens.db
+**/data/propertylens.db-journal
+**/data/propertylens.db-wal
+**/data/propertylens.db-shm
 
-# Big blobs anywhere under data/ (redundant with dirs above; catches stray files)
-data/**/*.joblib
-data/**/*.parquet
-data/**/*.pkl
-data/**/*.pickle
-data/**/*.feather
-data/**/*.h5
-data/**/*.hdf5
-data/**/*.npz
-data/**/*.npy
-data/**/*.arrow
-data/**/*.bin
-data/**/*.pt
-data/**/*.onnx
-data/**/*.safetensors
+# Big blobs anywhere under any data/ directory (catches stray files)
+**/data/**/*.joblib
+**/data/**/*.parquet
+**/data/**/*.pkl
+**/data/**/*.pickle
+**/data/**/*.feather
+**/data/**/*.h5
+**/data/**/*.hdf5
+**/data/**/*.npz
+**/data/**/*.npy
+**/data/**/*.arrow
+**/data/**/*.bin
+**/data/**/*.pt
+**/data/**/*.onnx
+**/data/**/*.safetensors
 
-# Hugging Face hub cache if created inside the repo
+# Hugging Face hub cache + downloaded weights
 .huggingface/
 hf_cache/
+**/hf_data/
+
+# Stray model files outside the source tree (root level only)
+/*.pkl
+/*.joblib
+/*.h5
+/*.pt
+/*.onnx
+/*.safetensors
 
 # Notebook output dumps
-notebooks/**/outputs/
+**/notebooks/**/outputs/
 **/outputs/*.joblib
 **/outputs/*.parquet
 
 # ── Notebook caches / artifacts (keep out of git) ───────────────────
-notebooks/03_ml_layer_hybrid/artifacts/
-notebooks/05_chatbot/*.pkl
-notebooks/05_chatbot/sgschooling_*.csv
+**/notebooks/03_ml_layer_hybrid/artifacts/
+**/notebooks/05_chatbot/*.pkl
+**/notebooks/05_chatbot/sgschooling_*.csv
 
 # Root-level node_modules (e.g. Vite cache); frontend deps live under frontend/
 /node_modules/
