@@ -18,20 +18,19 @@ from backend.models import (
     LIMERequest,
     LIMEResponse,
     LIMEFeature,
+    CohortSHAPRequest,
+    CohortSHAPResponse,
+    CohortSHAPFeature,
+    CompositeSHAPRequest,
+    CompositeSHAPResponse,
+    CompositeSHAPFeature,
+    BuyerViewRequest,
+    BuyerViewResponse,
 )
 router = APIRouter()
 
 
-class _AppStateProxy:
-    """Lazy access to backend.main.state to avoid circular imports during router setup."""
-
-    def __getattr__(self, name: str):
-        from backend.main import state as _s
-
-        return getattr(_s, name)
-
-
-state = _AppStateProxy()
+from backend.app_state import state  # noqa: E402
 
 def _public_price(raw: float) -> float:
     """Same rounding as POST /api/predict — nearest S$100."""
@@ -330,6 +329,144 @@ def run_explain_shap(req: SHAPRequest) -> SHAPResponse:
 @router.post("/explain/shap", response_model=SHAPResponse)
 def explain_shap(req: SHAPRequest):
     return run_explain_shap(req)
+
+
+@router.post("/explain/cohort-shap", response_model=CohortSHAPResponse)
+def explain_cohort_shap(req: CohortSHAPRequest):
+    """
+    Cohort-relative SHAP for the cluster-routed XGBoost component.
+
+    Reframes the baseline from the global training mean to the mean SHAP over
+    the k nearest CBR neighbours (default k=30). Efficiency identity holds for
+    cluster XGB: ``cohort_baseline + Σ phi_cohort ≈ shap_model_prediction``.
+    """
+    from fastapi import HTTPException
+
+    from backend.cohort_shap import compute_cohort_shap
+
+    X = flat_to_feature_vector(req.flat).reshape(1, -1)
+
+    try:
+        result = compute_cohort_shap(
+            X, state.hybrid_bundle, state.feature_cols, req.flat, k=req.k
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=503, detail=f"Cohort SHAP failed: {type(e).__name__}: {e}"
+        ) from e
+
+    features = [
+        CohortSHAPFeature(
+            feature=state.feature_cols[i],
+            phi_cohort=round(float(result.phi_cohort[i]), 2),
+            phi_global=round(float(result.phi_global[i]), 2),
+            feature_value=round(float(result.feature_values[i]), 4),
+        )
+        for i in range(len(state.feature_cols))
+    ]
+    features.sort(key=lambda f: abs(f.phi_cohort), reverse=True)
+
+    return CohortSHAPResponse(
+        shap_values=features,
+        cohort_baseline=round(result.cohort_baseline, 2),
+        base_value_global=round(result.base_value_global, 2),
+        cohort_size=result.cohort_size,
+        cohort_median_price=round(result.cohort_median_price, 2),
+        cohort_town_mix=result.cohort_town_mix,
+        cluster_id=result.cluster_id,
+        explained_model="cluster_xgb",
+        shap_model_prediction=round(result.xgb_pred, 2),
+    )
+
+
+@router.post("/explain/buyer-view", response_model=BuyerViewResponse)
+def explain_buyer_view(req: BuyerViewRequest):
+    """
+    Buyer-facing presentation transform over cohort-relative SHAP.
+
+    Groups one-hot families, drops noise-level contributions, ranks top
+    strengths / trade-offs, and attaches cohort percentile context. ``estimate``
+    uses the hybrid ensemble (same as /predict); ``explained_model`` is still
+    ``cluster_xgb`` because the SHAP values come from the XGB booster — same
+    caveat as /api/explain/shap.
+    """
+    from fastapi import HTTPException
+
+    from backend.cohort_shap import compute_cohort_shap
+    from backend.buyer_view import build_buyer_view
+
+    X = flat_to_feature_vector(req.flat).reshape(1, -1)
+    estimate = _public_price(predict_hybrid(X))
+
+    try:
+        cohort_result = compute_cohort_shap(
+            X, state.hybrid_bundle, state.feature_cols, req.flat, k=req.k
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=503, detail=f"Cohort SHAP failed: {type(e).__name__}: {e}"
+        ) from e
+
+    payload = build_buyer_view(
+        req.flat, X, cohort_result, estimate, state.feature_cols
+    )
+    return BuyerViewResponse(**payload)
+
+
+@router.post("/explain/composite-shap", response_model=CompositeSHAPResponse)
+def explain_composite_shap(req: CompositeSHAPRequest):
+    """
+    Composite TreeSHAP for the full hybrid cluster ensemble.
+
+    Runs TreeSHAP on each tree base-learner (XGB/LGB/RF) and linearly combines
+    the per-feature attributions using the cluster's meta-learner coefficients.
+    The Ridge base-learner is excluded — its residual shows up as
+    ``approximation_error`` on the response and is typically small.
+    """
+    from fastapi import HTTPException
+
+    from backend.composite_treeshap import compute_composite_treeshap
+
+    X = flat_to_feature_vector(req.flat).reshape(1, -1)
+    hybrid_raw = predict_hybrid(X)
+    hybrid_pred = _public_price(hybrid_raw)
+
+    try:
+        result = compute_composite_treeshap(X, state.hybrid_bundle, state.feature_cols)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Composite TreeSHAP failed: {type(e).__name__}: {e}",
+        ) from e
+
+    features = [
+        CompositeSHAPFeature(
+            feature=state.feature_cols[i],
+            shap_value=round(float(result.shap_values[i]), 2),
+            feature_value=round(float(X[0, i]), 4),
+        )
+        for i in range(len(state.feature_cols))
+    ]
+    features.sort(key=lambda f: abs(f.shap_value), reverse=True)
+
+    approx_err = round(float(hybrid_pred) - float(result.composite_prediction), 2)
+
+    return CompositeSHAPResponse(
+        shap_values=features,
+        base_value=round(result.base_value, 2),
+        predicted_price=hybrid_pred,
+        composite_prediction=round(result.composite_prediction, 2),
+        approximation_error=approx_err,
+        cluster_id=result.cluster_id,
+        explainer_source=result.explainer_source,
+        meta_weights={k: round(float(v), 6) for k, v in result.meta_weights.items()},
+        per_model_totals={
+            k: round(float(v), 2) for k, v in result.per_model_totals.items()
+        },
+        typical_values={
+            k: round(float(v), 4) for k, v in (result.typical_values or {}).items()
+        },
+    )
 
 
 @router.post("/explain/lime", response_model=LIMEResponse)

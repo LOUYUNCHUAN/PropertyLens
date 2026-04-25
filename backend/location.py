@@ -98,7 +98,10 @@ def _highway_polyline_segments_from_df(df: pd.DataFrame) -> list[dict[str, Any]]
     current_type = "expressway"
     prev_lat: float | None = None
     prev_lng: float | None = None
-    max_gap_m = 500.0
+    # Sample spacing in highways.csv varies by corridor (PIE ~565m between
+    # consecutive points). Threshold must exceed that, while still splitting
+    # on truly disjoint branches of the same-named road.
+    max_gap_m = 2000.0
 
     for _, row in df.iterrows():
         lat, lng = float(row["lat"]), float(row["lng"])

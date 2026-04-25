@@ -14,12 +14,14 @@ import json
 import requests
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-import google.generativeai as genai
-from neo4j import GraphDatabase
+try:  # optional dependency
+  from neo4j import GraphDatabase  # type: ignore
+except Exception:  # pragma: no cover - env-dependent import
+  GraphDatabase = None
 
 from backend.hdb_towns import MATURE_ESTATES, TOWNS
 from backend.models import ChatRequest
-from backend.main import state
+from backend.app_state import state
 
 router = APIRouter()
 
@@ -32,9 +34,15 @@ OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma3').strip() or 'gemma3'
 # ── Gemini setup (optional) ───────────────────────────────────────
 GEMINI_AVAILABLE = False
 gemini = None
+try:  # optional dependency
+  import google.generativeai as genai  # type: ignore
+except Exception:  # pragma: no cover - env-dependent import
+  genai = None
 _api_key = os.environ.get('GEMINI_API_KEY', '').strip()
 if _api_key:
   try:
+    if genai is None:
+      raise ImportError("google-generativeai not installed")
     genai.configure(api_key=_api_key)
     gemini = genai.GenerativeModel(
       model_name='gemini-2.5-flash',
@@ -89,6 +97,8 @@ NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
 NEO4J_PASS = os.environ.get('NEO4J_PASSWORD', 'password')
 
 try:
+  if GraphDatabase is None:
+    raise ImportError("neo4j not installed")
   neo4j_driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
   neo4j_driver.verify_connectivity()
   NEO4J_AVAILABLE = True

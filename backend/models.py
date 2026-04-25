@@ -123,6 +123,134 @@ class SHAPResponse(BaseSchema):
     )
 
 
+# ── Composite TreeSHAP (full hybrid stack) ────────────────────────
+class CompositeSHAPRequest(BaseSchema):
+    flat: PredictRequest
+
+
+class CompositeSHAPFeature(BaseSchema):
+    feature: str
+    shap_value: float
+    feature_value: float
+
+
+class CompositeSHAPResponse(BaseSchema):
+    shap_values: List[CompositeSHAPFeature]
+    base_value: float = Field(
+        ...,
+        description="w_xgb*E_xgb + w_lgb*E_lgb + w_rf*E_rf + meta.intercept (Ridge component excluded).",
+    )
+    predicted_price: float = Field(
+        ..., description="Hybrid ensemble prediction for reference."
+    )
+    composite_prediction: float = Field(
+        ...,
+        description="base_value + sum(shap_values). Differs from predicted_price by the ignored Ridge contribution.",
+    )
+    approximation_error: float = Field(
+        ...,
+        description="predicted_price - composite_prediction. Usually small; large values suggest a non-negligible Ridge term.",
+    )
+    cluster_id: int
+    explainer_source: str = Field(
+        default="cluster",
+        description='"cluster" if routed to per-cluster models, "global" if cluster bundle is fallback.',
+    )
+    meta_weights: Dict[str, float] = Field(
+        ...,
+        description="Meta-learner coefficients [ridge, xgb, lgb, rf] exposed so the UI can explain the combination.",
+    )
+    per_model_totals: Dict[str, float] = Field(
+        ...,
+        description="Weighted total contribution by each tree base learner (w_i * Σ shap_i).",
+    )
+    typical_values: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Cluster-mean per feature from the training set. Lets the UI show 'value · typical N' per row.",
+    )
+
+
+# ── Cohort-relative SHAP ──────────────────────────────────────────
+class CohortSHAPRequest(BaseSchema):
+    flat: PredictRequest
+    k: int = Field(default=30, ge=5, le=100)
+
+
+class CohortSHAPFeature(BaseSchema):
+    feature: str
+    phi_cohort: float  # reframed contribution (vs cohort baseline)
+    phi_global: float  # original SHAP (vs training-set baseline) for reference
+    feature_value: float
+
+
+class CohortSHAPResponse(BaseSchema):
+    shap_values: List[CohortSHAPFeature]
+    cohort_baseline: float = Field(
+        ..., description="base_value_global + mean_cohort(phi_global).sum(); cohort_baseline + Σ phi_cohort ≈ cluster XGB prediction."
+    )
+    base_value_global: float
+    cohort_size: int
+    cohort_median_price: float
+    cohort_town_mix: Dict[str, int]
+    cluster_id: int
+    explained_model: str = Field(
+        default="cluster_xgb",
+        description="Model SHAP is computed against — cluster-routed XGBoost, not the full hybrid ensemble.",
+    )
+    shap_model_prediction: float = Field(
+        ...,
+        description="Cluster XGB prediction for the query; efficiency-identity target.",
+    )
+
+
+# ── Buyer-view transform (presentation-shaped cohort SHAP) ────────
+class BuyerViewRequest(BaseSchema):
+    flat: PredictRequest
+    k: int = Field(default=30, ge=5, le=100)
+
+
+class BuyerViewDriver(BaseSchema):
+    feature_group: str
+    display_name: str
+    delta: float
+    cohort_percentile: Optional[float] = None     # omitted when confidence == "low"
+    percentile_label: Optional[str] = None
+    raw_value_descriptor: str
+
+
+class BuyerViewPriceRange(BaseSchema):
+    min: float
+    max: float
+    estimate_percentile: float
+
+
+class BuyerViewVerdict(BaseSchema):
+    label: str
+    tone: str                                     # "neutral" | "warning" | "info"
+    pct_diff_vs_baseline: float
+
+
+class BuyerViewMarketContext(BaseSchema):
+    delta: float
+    descriptor: str
+    direction: str                                # "up" | "down" | "flat"
+
+
+class BuyerViewResponse(BaseSchema):
+    estimate: float
+    cohort_baseline: float
+    cohort_size: int
+    cohort_descriptor: str
+    cohort_price_range: Optional[BuyerViewPriceRange] = None   # None when confidence == "low"
+    verdict: BuyerViewVerdict
+    strengths: List[BuyerViewDriver]
+    tradeoffs: List[BuyerViewDriver]
+    market_context: Optional[BuyerViewMarketContext] = None    # None when below threshold
+    absorbed_factors: List[str]
+    explained_model: str = "cluster_xgb"
+    confidence: str = "high"                                   # "high" | "low"
+
+
 # ── LIME ──────────────────────────────────────────────────────────
 class LIMERequest(BaseSchema):
     flat: PredictRequest

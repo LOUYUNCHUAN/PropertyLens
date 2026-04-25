@@ -14,9 +14,23 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.auth_deps import resolve_effective_username
+from backend.chat_tools import (
+    extract_flat_from_message as _extract_flat_from_message,
+    format_cbr as _format_cbr,
+    format_shap as _format_shap,
+    format_shortlist_rows as _format_shortlist_rows,
+    resolve_flat_from_rag_body as _resolve_flat,
+    run_cbr_tool as _run_cbr_tool,
+    run_predict_tool as _run_predict_tool,
+    run_shap_tool as _run_shap_tool,
+    wants_cbr as _wants_cbr,
+    wants_predict as _wants_predict,
+    wants_shap as _wants_shap,
+    wants_shortlist as _wants_shortlist,
+)
 from backend.db import get_db
 from backend.hdb_towns import TOWNS as _HDB_TOWNS, STREET_PREFIX_TO_TOWN, infer_town_from_street
-from backend.models import CBRRequest, PredictRequest, RagChatRequest, SHAPRequest
+from backend.models import RagChatRequest
 from backend.sql_models import WishlistListing
 
 router = APIRouter()
@@ -44,69 +58,10 @@ def _sse_log(level: str, text: str) -> str:
     return f"data: [LOG]{level}|{safe}[/LOG]\n\n"
 
 
-def _wants_shortlist(msg: str) -> bool:
-    m = msg.lower()
-    return any(
-        k in m
-        for k in (
-            "shortlist",
-            "saved listing",
-            "my saves",
-            "wishlist",
-            "what did i save",
-            "my saved",
-        )
-    )
-
-
-def _wants_predict(msg: str) -> bool:
-    m = msg.lower()
-    return any(
-        k in m
-        for k in (
-            "predict",
-            "estimate",
-            "how much",
-            "fair price",
-            "valuation",
-            "price for",
-            "worth ",
-            "is $",
-            "is s$",
-        )
-    )
-
-
-def _wants_cbr(msg: str) -> bool:
-    m = msg.lower()
-    return any(
-        k in m
-        for k in (
-            "similar",
-            "comparable",
-            "comps",
-            "comp transaction",
-            "sold nearby",
-            "past sales",
-        )
-    )
-
-
-def _wants_shap(msg: str) -> bool:
-    m = msg.lower()
-    return any(
-        k in m
-        for k in (
-            "why ",
-            "explain",
-            "shap",
-            "driver",
-            "feature drove",
-            "what drove",
-            "top feature",
-            "importance",
-        )
-    )
+#
+# Tool triggers + helpers were extracted to backend/chat_tools.py.
+# Keep the rest of this module behavior unchanged.
+#
 
 
 _SMALLTALK_ACKS = frozenset({
@@ -240,146 +195,9 @@ def _needs_pinecone_retrieval(
     return False
 
 
-def _resolve_flat(
-    db: Session,
-    eff_username: Optional[str],
-    body: RagChatRequest,
-) -> PredictRequest | None:
-    if body.flat_overrides is not None:
-        return body.flat_overrides
-    if body.shortlist_item_id is not None and eff_username:
-        row = (
-            db.query(WishlistListing)
-            .filter(
-                WishlistListing.id == body.shortlist_item_id,
-                WishlistListing.username == eff_username,
-            )
-            .first()
-        )
-        if row and row.payload_json:
-            try:
-                return PredictRequest.model_validate(row.payload_json)
-            except Exception:
-                return None
-    return None
-
-
-def _extract_flat_from_message(msg: str) -> Optional[PredictRequest]:
-    """Best-effort regex parser: free text → PredictRequest.
-    Returns None if required fields (address + flat_type + area) can't be found.
-    Relies on the backend feature-table lookup to fill POI/market fields when
-    block + street + town + sale_month are all present.
-    """
-    from datetime import date
-
-    text = (msg or "").strip()
-    if not text:
-        return None
-
-    before_comma = text.split(",")[0].strip()
-    addr_m = re.match(
-        r"^\s*(?:blk\s+|block\s+)?(\d{1,4}[a-z]?)\s+(.+?)\s*$",
-        before_comma,
-        re.I,
-    )
-    if not addr_m:
-        return None
-    block = addr_m.group(1).upper()
-    street = addr_m.group(2).upper().strip()
-    town = infer_town_from_street(street)
-    if not town:
-        return None
-
-    ft_m = re.search(r"\b([1-5])\s*[- ]?\s*(?:room|rm)\b", text, re.I)
-    if not ft_m:
-        return None
-    flat_type = f"{ft_m.group(1)} ROOM"
-
-    area_m = re.search(r"(\d{2,3}(?:\.\d+)?)\s*(?:sqm|sq\.?m|m²|m2)\b", text, re.I)
-    if not area_m:
-        return None
-    area = float(area_m.group(1))
-    if not (20 <= area <= 400):
-        return None
-
-    lease_m = re.search(
-        r"(?:~|about\s+)?(\d{1,2})\s*(?:y|yr|yrs|year|years)\s*(?:lease|left|remain\w*)?",
-        text,
-        re.I,
-    )
-    remaining = int(lease_m.group(1)) if lease_m else 60
-    if not (1 <= remaining <= 99):
-        remaining = 60
-
-    today = date.today()
-    year = today.year
-    month = today.month
-    lease_start = year - 99 + remaining
-    if not (1960 <= lease_start <= 2035):
-        return None
-
-    storey_mid = 8.0
-    st_m = re.search(r"(\d{1,2})\s*(?:st|nd|rd|th)?\s*(?:floor|storey|storeys|level|lvl)\b", text, re.I)
-    if st_m:
-        try:
-            storey_mid = float(int(st_m.group(1)))
-        except ValueError:
-            pass
-
-    try:
-        return PredictRequest(
-            floor_area_sqm=area,
-            storey_mid=storey_mid,
-            remaining_lease_years=float(remaining),
-            lease_commence_date=int(lease_start),
-            dist_nearest_mrt_km=0.5,
-            block=block,
-            street_name=street,
-            town=town,
-            flat_type=flat_type,
-            sale_month=f"{year}-{month:02d}",
-            year=year,
-            month_num=month,
-        )
-    except Exception:
-        return None
-
-
-def _format_shortlist_rows(rows: list[WishlistListing]) -> str:
-    lines: list[str] = []
-    for r in rows:
-        label = r.display_label or "Listing"
-        town = (r.payload_json or {}).get("town") or "—"
-        lp = r.listing_price
-        pp = r.predicted_price
-        if lp is not None:
-            lines.append(
-                f"- id={r.id} | {label} | town={town} | listing=${lp:,.0f} | model=${pp:,.0f}"
-            )
-        else:
-            lines.append(f"- id={r.id} | {label} | town={town} | model=${pp:,.0f}")
-    return "\n".join(lines)
-
-
-def _format_cbr(resp) -> str:
-    lines: list[str] = []
-    for c in resp.comparables[:8]:
-        lines.append(
-            f"- {c.town} BLK {c.block} {c.street_name} | {c.flat_type} | "
-            f"${c.resale_price:,.0f} | {c.year} | sim≈{c.similarity_pct:.1f}%"
-        )
-    return "\n".join(lines) if lines else "(no comparables)"
-
-
-def _format_shap(resp) -> str:
-    top = (resp.shap_values or [])[:12]
-    lines = [
-        f"- {f.feature}: value={f.feature_value} SHAP={f.shap_value:+.2f}" for f in top
-    ]
-    hdr = f"type={resp.explanation_type} predicted_hybrid=${resp.predicted_price:,.0f} base={resp.base_value}"
-    if resp.fallback_reason:
-        hdr += f" (fallback: {resp.fallback_reason})"
-    return hdr + "\n" + "\n".join(lines)
+#
+# _resolve_flat / _extract_flat_from_message / _format_* now come from chat_tools.
+#
 
 
 @router.post("/rag-chat")
@@ -411,19 +229,10 @@ def rag_chat(
             flat = extracted
             flat_source = "nl_extract"
 
-    from backend.cbr import run_cbr_similar
-    from backend.predict import predict as run_predict
-    from backend.predict import run_explain_shap
-
     prediction_result = ""
     if flat and _wants_predict(msg):
         try:
-            pr = run_predict(flat)
-            prediction_result = (
-                f"Hybrid model predicted SGD {pr.predicted_price:,.0f} "
-                f"(approx range {pr.confidence_low:,.0f}–{pr.confidence_high:,.0f}). "
-                f"Test RMSE ≈ ${pr.rmse:,.0f}."
-            )
+            prediction_result = _run_predict_tool(flat)
         except Exception as e:
             prediction_result = f"(prediction unavailable: {type(e).__name__}: {e})"
 
@@ -442,14 +251,14 @@ def rag_chat(
     cbr_context = ""
     if flat and _wants_cbr(msg):
         try:
-            cbr_context = _format_cbr(run_cbr_similar(CBRRequest(flat=flat, k=8)))
+            cbr_context = _run_cbr_tool(flat, k=8)
         except Exception as e:
             cbr_context = f"(CBR unavailable: {type(e).__name__}: {e})"
 
     shap_context = ""
     if flat and _wants_shap(msg):
         try:
-            shap_context = _format_shap(run_explain_shap(SHAPRequest(flat=flat)))
+            shap_context = _run_shap_tool(flat)
         except Exception as e:
             shap_context = f"(SHAP unavailable: {type(e).__name__}: {e})"
 

@@ -128,7 +128,7 @@ class ConditionPhotoResponse(BaseModel):
 
 class _AppStateProxy:
     def __getattr__(self, name: str):
-        from backend.main import state as _s
+        from backend.app_state import state as _s
 
         return getattr(_s, name)
 

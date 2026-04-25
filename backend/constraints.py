@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -125,38 +126,76 @@ _rules_path = _processed_dir() / "rules.json"
 with open(_rules_path) as f:
     _all_rules = json.load(f)
 
-APRIORI_RULES = [r for r in _all_rules.get("apriori", []) if r.get("confidence", 0) >= 0.60]
-SURROGATE_RULES = [r for r in _all_rules.get("surrogate", []) if r.get("confidence", 0) >= 0.50]
+_meta = _all_rules.get("metadata", {}) or {}
 
-# ── Domain binning (must match tokens in shipped rules.json) ──────────────────
+# Data-driven price tertiles — written by scripts/regenerate_rules.py. Falls
+# back to the legacy 350/550 thresholds if this is a pre-regeneration rules
+# file.
+_price_thresh = _meta.get("price_thresholds") or {}
+_PRICE_BUDGET_UPPER = int(_price_thresh.get("budget_upper", 350_000))
+_PRICE_PREMIUM_LOWER = int(_price_thresh.get("premium_lower", 550_000))
+_PRICE_BUDGET_TOKEN = f"price=budget(<{_PRICE_BUDGET_UPPER // 1000}k)"
+_PRICE_MID_TOKEN = f"price=mid({_PRICE_BUDGET_UPPER // 1000}-{_PRICE_PREMIUM_LOWER // 1000}k)"
+_PRICE_PREMIUM_TOKEN = f"price=premium(>={_PRICE_PREMIUM_LOWER // 1000}k)"
+
+APRIORI_RULES = [r for r in _all_rules.get("apriori", []) if r.get("confidence", 0) >= 0.60]
+
+# Freshness guard on surrogate: skip leaves that split on a stale
+# ``transaction_year <= N`` threshold. If N is older than today minus
+# ``_STALE_YEAR_WINDOW`` the leaf's reference price can't be compared to a
+# fresh listing without the comparison being dominated by market drift rather
+# than the flat's own attributes.
+_STALE_YEAR_WINDOW = int(os.environ.get("PROPERTYLENS_SURROGATE_STALE_WINDOW_YEARS", "3"))
+_MIN_SURROGATE_YEAR = datetime.utcnow().year - _STALE_YEAR_WINDOW
+
+
+def _is_surrogate_fresh(rule: dict) -> bool:
+    """False if the leaf's conditions constrain ``transaction_year`` to a
+    window that ends before the freshness horizon."""
+    for cond in rule.get("conditions") or []:
+        m = re.match(
+            r"^\s*transaction_year\s*(<=|<)\s*([-+]?\d*\.?\d+)\s*$", str(cond)
+        )
+        if m:
+            ceiling = float(m.group(2))
+            if ceiling < _MIN_SURROGATE_YEAR - 0.5:
+                return False
+    return True
+
+
+SURROGATE_RULES = [
+    r
+    for r in _all_rules.get("surrogate", [])
+    if r.get("confidence", 0) >= 0.50 and _is_surrogate_fresh(r)
+]
+
+# ── Domain binning (tokens are derived from rules.json metadata so the binner
+# can never drift from what the miner produced) ───────────────────────────────
 
 
 def bin_price(price: float) -> str:
-    if price < 350_000:
-        return "price=budget(<350k)"
-    if price < 550_000:
-        return "price=mid(350-550k)"
-    return "price=premium(>550k)"
+    if price < _PRICE_BUDGET_UPPER:
+        return _PRICE_BUDGET_TOKEN
+    if price < _PRICE_PREMIUM_LOWER:
+        return _PRICE_MID_TOKEN
+    return _PRICE_PREMIUM_TOKEN
 
 
 def bin_mrt(dist_km: float) -> str:
-    """Align with rules.json: far uses >800m (0.8 km)."""
+    """Tokens MUST match scripts/regenerate_rules.py::discretise()."""
     if dist_km < 0.5:
         return "mrt=walking(<0.5km)"
     if dist_km < 0.8:
-        return "mrt=near(0.5-1km)"
-    return "mrt=far(>800m)"
+        return "mrt=near(0.5-0.8km)"
+    return "mrt=far(>0.8km)"
 
 
 def bin_lease(years: float) -> str:
-    """Align with rules.json medium band 55–70 yr."""
-    if years > 70:
-        return "lease=long(>70yr)"
-    if years >= 55:
-        return "lease=medium(55-70yr)"
-    if years >= 50:
-        return "lease=medium(50-70yr)"
-    return "lease=short(<50yr)"
+    if years < 55:
+        return "lease=short(<55yr)"
+    if years < 80:
+        return "lease=medium(55-80yr)"
+    return "lease=long(>=80yr)"
 
 
 def bin_area(sqm: float) -> str:
@@ -164,7 +203,7 @@ def bin_area(sqm: float) -> str:
         return "area=small(<70sqm)"
     if sqm < 100:
         return "area=medium(70-100sqm)"
-    return "area=large(>100sqm)"
+    return "area=large(>=100sqm)"
 
 
 def bin_storey(storey: float) -> str:
@@ -180,14 +219,13 @@ def bin_mature(is_mature: bool) -> str:
 
 
 def bin_rooms(flat_type: str) -> str:
-    """
-    rules.json only uses rooms=3 and rooms=4 in IF clauses.
-    Map 5-room / executive to rooms=4 as a coarse heuristic.
-    """
+    """Map flat_type → rooms token used by the miner (rooms=2-3 / 4 / 5+)."""
     ft = (flat_type or "4 ROOM").strip().upper().replace("MULTI GENERATION", "MULTI-GENERATION")
     if ft in ("1 ROOM", "2 ROOM", "3 ROOM"):
-        return "rooms=3"
-    return "rooms=4"
+        return "rooms=2-3"
+    if ft == "4 ROOM":
+        return "rooms=4"
+    return "rooms=5+"
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -202,6 +240,11 @@ class ValidateRequest(BaseModel):
     remaining_lease_years: Optional[float] = None
     dist_nearest_mrt_km: Optional[float] = None
     is_mature_estate: Optional[bool] = None
+    # When provided, validate_listing also runs the model_band check that flags
+    # asking prices falling outside the AI estimate's 95% confidence interval.
+    predicted_price: Optional[float] = None
+    confidence_low: Optional[float] = None
+    confidence_high: Optional[float] = None
 
     @model_validator(mode="after")
     def _require_scalars_without_flat(self) -> ValidateRequest:
@@ -243,9 +286,14 @@ class ValidateResponse(BaseModel):
     violation_count: int
     apriori: Optional[CspSubsystemResult] = None
     surrogate: Optional[CspSubsystemResult] = None
+    model_band: Optional[CspSubsystemResult] = None
 
 
-CONDITION_LABELS = {
+# Pull tokens → human labels from the rules file when present. The miner
+# writes this map whenever it regenerates rules.json, so the backend never
+# has to know the current buckets ahead of time. Falls back to a small legacy
+# hardcoded set for older rules.json payloads that don't have ``label_map``.
+_LEGACY_LABELS = {
     "mrt=walking(<0.5km)": "walking distance to MRT",
     "mrt=near(0.5-1km)": "near an MRT (0.5–0.8 km)",
     "mrt=far(>800m)": "far from MRT (>800 m)",
@@ -260,19 +308,24 @@ CONDITION_LABELS = {
     "storey=low(1-5)": "low floor (1–5)",
     "storey=mid(6-12)": "mid floor (6–12)",
     "storey=high(>12)": "high floor (>12)",
-    "price=budget(<350k)": "budget range (<$350k)",
-    "price=mid(350-550k)": "mid range ($350k–$550k)",
-    "price=premium(>550k)": "premium range (>$550k)",
     "mature_estate=yes": "mature estate",
     "mature_estate=no": "non-mature estate",
     "rooms=3": "3-room profile",
     "rooms=4": "4+ room profile",
 }
+CONDITION_LABELS: dict[str, str] = {
+    **_LEGACY_LABELS,
+    **(_meta.get("label_map") or {}),
+    # Ensure price tokens always have labels matching the current thresholds:
+    _PRICE_BUDGET_TOKEN: f"budget range (<${_PRICE_BUDGET_UPPER // 1000}k)",
+    _PRICE_MID_TOKEN: f"mid range (${_PRICE_BUDGET_UPPER // 1000}k–${_PRICE_PREMIUM_LOWER // 1000}k)",
+    _PRICE_PREMIUM_TOKEN: f"premium range (≥${_PRICE_PREMIUM_LOWER // 1000}k)",
+}
 
 PRICE_SUGGESTIONS = {
-    "price=budget(<350k)": "Consider pricing below $350k to align with market patterns.",
-    "price=mid(350-550k)": "Market patterns suggest $350k–$550k for this flat profile.",
-    "price=premium(>550k)": "This flat profile supports premium pricing above $550k.",
+    _PRICE_BUDGET_TOKEN: f"Consider pricing below ${_PRICE_BUDGET_UPPER // 1000}k to align with current market patterns.",
+    _PRICE_MID_TOKEN: f"Market patterns suggest ${_PRICE_BUDGET_UPPER // 1000}k–${_PRICE_PREMIUM_LOWER // 1000}k for this flat profile.",
+    _PRICE_PREMIUM_TOKEN: f"This flat profile supports premium pricing above ${_PRICE_PREMIUM_LOWER // 1000}k.",
 }
 
 _SURR_COND_RE = re.compile(
@@ -457,6 +510,84 @@ def _run_surrogate(asking_price: float, features: dict[str, float]) -> CspSubsys
     )
 
 
+# Above this gap (asking vs predicted, %) a model_band overshoot is flagged
+# as "warning" rather than the softer "info". Tuned to fire on the kind of
+# 30%+ overshoot that surfaces an "Above ceiling" widget elsewhere in the UI.
+_MODEL_BAND_WARN_GAP_PCT = 5.0
+
+
+def _run_model_band(
+    asking_price: float,
+    predicted: Optional[float],
+    low: Optional[float],
+    high: Optional[float],
+) -> Optional[CspSubsystemResult]:
+    """Compare the asking price against the AI estimate's 95% confidence band.
+
+    Returns None when the caller didn't supply a prediction (so the response
+    omits the field entirely instead of showing an empty section in the UI).
+    """
+    if predicted is None or predicted <= 0 or high is None:
+        return None
+
+    violations: list[ConstraintViolation] = []
+    satisfied: list[str] = []
+
+    if asking_price > high:
+        gap_pct = ((asking_price - predicted) / predicted) * 100
+        severity = "warning" if gap_pct > _MODEL_BAND_WARN_GAP_PCT else "info"
+        violations.append(
+            ConstraintViolation(
+                severity=severity,
+                message=(
+                    f"Asking ${asking_price:,.0f} is above the AI estimate's confidence "
+                    f"ceiling of ${high:,.0f} ({gap_pct:+.1f}% vs estimate ${predicted:,.0f})."
+                ),
+                rule_confidence=0.95,
+                expected=f"≤ ${high:,.0f}",
+                actual=f"${asking_price:,.0f}",
+                suggestion=(
+                    f"Listings priced near or below the AI estimate (${predicted:,.0f}) "
+                    "typically attract more viewings and shorter time on market."
+                ),
+                source="model_band",
+            )
+        )
+    elif low is not None and asking_price < low:
+        gap_pct = ((predicted - asking_price) / predicted) * 100
+        violations.append(
+            ConstraintViolation(
+                severity="info",
+                message=(
+                    f"Asking ${asking_price:,.0f} is below the AI estimate's confidence "
+                    f"floor of ${low:,.0f} ({gap_pct:.1f}% under estimate ${predicted:,.0f})."
+                ),
+                rule_confidence=0.95,
+                expected=f"≥ ${low:,.0f}",
+                actual=f"${asking_price:,.0f}",
+                suggestion=(
+                    f"Cross-check with comparable sales — pricing this far below the model's "
+                    f"estimate of ${predicted:,.0f} may leave value on the table."
+                ),
+                source="model_band",
+            )
+        )
+    else:
+        band_text = (
+            f"${low:,.0f}–${high:,.0f}" if low is not None else f"≤ ${high:,.0f}"
+        )
+        satisfied.append(
+            f"Asking ${asking_price:,.0f} is inside the AI estimate's 95% confidence band ({band_text}). ✓"
+        )
+
+    return CspSubsystemResult(
+        violations=violations,
+        satisfied=satisfied,
+        csp_status="VIOLATIONS_FOUND" if violations else "CONSISTENT",
+        violation_count=len(violations),
+    )
+
+
 def validate_listing(req: ValidateRequest) -> ValidateResponse:
     li = _resolved_listing(req)
     apriori_res = _run_apriori(li)
@@ -472,20 +603,35 @@ def validate_listing(req: ValidateRequest) -> ValidateResponse:
             logger.warning("Surrogate CSP skipped: %s", exc)
             surrogate_res = None
 
+    model_band_res = _run_model_band(
+        li["asking_price"],
+        req.predicted_price,
+        req.confidence_low,
+        req.confidence_high,
+    )
+
     merged_violations = list(apriori_res.violations)
     merged_satisfied = list(apriori_res.satisfied)
     if surrogate_res:
         merged_violations.extend(surrogate_res.violations)
         merged_satisfied.extend(surrogate_res.satisfied)
+    if model_band_res:
+        merged_violations.extend(model_band_res.violations)
+        merged_satisfied.extend(model_band_res.satisfied)
 
-    total_violations = apriori_res.violation_count + (surrogate_res.violation_count if surrogate_res else 0)
+    total_violations = (
+        apriori_res.violation_count
+        + (surrogate_res.violation_count if surrogate_res else 0)
+        + (model_band_res.violation_count if model_band_res else 0)
+    )
     status = "VIOLATIONS_FOUND" if total_violations > 0 else "CONSISTENT"
 
     return ValidateResponse(
-        violations=merged_violations[: 5 + MAX_SURROGATE_VIOLATIONS],
-        satisfied=merged_satisfied[:6],
+        violations=merged_violations[: 5 + MAX_SURROGATE_VIOLATIONS + 1],
+        satisfied=merged_satisfied[:7],
         csp_status=status,
         violation_count=total_violations,
         apriori=apriori_res,
         surrogate=surrogate_res,
+        model_band=model_band_res,
     )

@@ -1,8 +1,16 @@
 """
 cbr.py — /api/cbr/similar
 Returns top-k most similar past transactions using BallTree.
-Case pool: same calendar year as the query first; if fewer than k rows, widens
-to the 3-year recency window, then the previous town / all-rows relaxations.
+
+Case-pool cascade (strict recency, geography-first):
+  T0  same town,  year == flat_year             (most stringent)
+  T1  same town,  year >= flat_year - 1         (≈ last 12–24 months)
+  T2  any town,   year >= flat_year - 1         (drop town before going stale)
+
+If T2 still yields fewer than k rows we return what we have rather than
+relaxing further — HDB resale prices have appreciated materially since 2020,
+so widening past ~24 months would introduce a systematic downward bias in the
+returned comparables (and in the cbr_median used by /api/predict's flag).
 """
 
 from datetime import datetime
@@ -31,25 +39,27 @@ def _filter_cbr_df_for_k(
     *,
     k_requested: int,
     flat_year: int,
-    min_year: int,
     town_val: str,
     has_town_col: bool,
 ) -> pd.DataFrame:
-    """Prefer same calendar year, then widen to the 3-year floor window and prior relaxations."""
+    """Strict recency cascade: same town this year → same town last 1–2y → any town last 1–2y.
+
+    Hard floor at ``flat_year - 1``; never falls back to multi-year-old data.
+    Returns the smaller surviving tier rather than padding with stale rows."""
+    recency_mask = ys >= (flat_year - 1)
+    same_year_mask = ys == flat_year
+
     if town_val and has_town_col:
         town_mask = df["town"].str.upper() == town_val
         tiers = [
-            df[town_mask & (ys == flat_year)],
-            df[town_mask & (ys >= min_year)],
-            df[town_mask],
-            df[ys >= min_year],
-            df,
+            df[town_mask & same_year_mask],   # T0
+            df[town_mask & recency_mask],     # T1
+            df[recency_mask],                 # T2 (drop town, keep recency)
         ]
     else:
         tiers = [
-            df[ys == flat_year],
-            df[ys >= min_year],
-            df,
+            df[same_year_mask],
+            df[recency_mask],
         ]
 
     df_filtered = tiers[0]
@@ -58,7 +68,17 @@ def _filter_cbr_df_for_k(
             break
         df_filtered = wider
 
-    return df if df_filtered.empty else df_filtered
+    # Final fail-soft: if even T2 has zero rows (e.g. user queried a future
+    # year not yet in the data), fall back to recency_mask without town to at
+    # least return *something* recent rather than 5+ year old rows.
+    if df_filtered.empty:
+        df_filtered = df[recency_mask]
+    # Crash-prevention only: if recency_mask is also empty (e.g. very old
+    # historical year request like 1995), use the whole frame so BallTree.query
+    # has rows to operate on.
+    if df_filtered.empty:
+        df_filtered = df
+    return df_filtered
 
 
 def _split_address_key(key) -> tuple[str, str]:
@@ -92,7 +112,7 @@ def compute_cbr_median(comparables: list) -> float | None:
 
 
 def run_cbr_similar(req: CBRRequest) -> CBRResponse:
-    from backend.main import state
+    from backend.app_state import state
     from backend.predict import flat_to_feature_vector
 
     # Build full feature vector and aligned subset used for CBR
@@ -114,7 +134,6 @@ def run_cbr_similar(req: CBRRequest) -> CBRResponse:
 
     # Determine current year from request (preferred) or system clock
     flat_year = getattr(req.flat, "year", None) or datetime.now().year
-    min_year = max(flat_year - 3, 2022)
 
     town_val = (getattr(req.flat, "town", None) or "").upper()
     ys = _cbr_year_series(df)
@@ -125,7 +144,6 @@ def run_cbr_similar(req: CBRRequest) -> CBRResponse:
         ys,
         k_requested=k_requested,
         flat_year=int(flat_year),
-        min_year=min_year,
         town_val=town_val,
         has_town_col=has_town_col,
     )

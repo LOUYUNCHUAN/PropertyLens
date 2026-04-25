@@ -8,7 +8,7 @@ from fastapi import APIRouter
 import numpy as np
 
 from backend.models import CounterfactualRequest, CounterfactualResponse, SHAPFeature
-from backend.main import state
+from backend.app_state import state
 
 router = APIRouter()
 
