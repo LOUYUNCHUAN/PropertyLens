@@ -2,7 +2,7 @@
 
 End-to-end setup for a fresh clone — from `git clone` to a running app you can log into.
 
-> **TL;DR order:** venv → `.env` → download artifacts → seed Neo4j + SQLite → start Ollama → `npm install` → run backend → run frontend on **port 5173** → log in as `user` / `1234` → (optional) install Chrome extension.
+> **TL;DR order:** `cd SystemCode/` → venv → `.env` → download artifacts → seed Neo4j + SQLite → start Ollama → `npm install` → run backend → run frontend on **port 5173** → log in as `user` / `1234` → (optional) install Chrome extension.
 
 ---
 
@@ -24,22 +24,24 @@ End-to-end setup for a fresh clone — from `git clone` to a running app you can
 
 ```bash
 git clone <repo-url>
-cd PropertyLens
+cd PropertyLens/SystemCode                 # ← all setup commands assume cwd = SystemCode/
 
 python3.11 -m venv .venv
-source .venv/bin/activate              # Windows: .venv\Scripts\activate
+source .venv/bin/activate                  # Windows: .venv\Scripts\activate
 
 pip install -r backend/requirements.txt
 pip install jupyter notebook ipykernel huggingface_hub
 ```
 
-The Jupyter packages are needed to run the three setup notebooks at the repo root.
+The Jupyter packages are needed to run the three setup notebooks at the top of `SystemCode/`.
+
+> **Why `SystemCode/`?** This repo follows the NUS-ISS IRS-PM submission template, which puts all source code under a top-level `SystemCode/` folder. The backend, setup notebooks, and `data/` all sit inside `SystemCode/` and resolve paths relative to it — running setup from anywhere else will write artifacts to the wrong directory.
 
 ---
 
-## 2. Create your `.env` at the repo root
+## 2. Create your `.env` inside `SystemCode/`
 
-Copy `.env.example` → `.env` and fill in real values. The template lists every variable the backend reads, with safe defaults pre-filled where possible:
+Copy `.env.example` → `.env` (both inside `SystemCode/`) and fill in real values. The backend's `app_state.py` loads `.env` from `BACKEND_DIR.parent`, which resolves to `SystemCode/` after this restructure. The template lists every variable the backend reads, with safe defaults pre-filled where possible:
 
 ```bash
 cp .env.example .env
@@ -63,13 +65,13 @@ cp .env.example .env
 
 ## 3. Download artifacts from Hugging Face
 
-Open and **run all cells** in the root-level notebook:
+From `SystemCode/`, open and **run all cells** in:
 
 ```
 jupyter notebook download_artifacts_from_hf.ipynb
 ```
 
-This pulls everything that lives outside git into the exact folder layout the backend expects:
+This pulls everything that lives outside git into the exact folder layout the backend expects (paths are relative to `SystemCode/`):
 
 
 | HF source                                                              | Drops into                                     |
@@ -86,7 +88,7 @@ The final cell verifies every required file is present (`✅`/`❌ MISSING`). **
 
 ## 4. Seed Neo4j knowledge graph + SQLite app DB
 
-Open and **run all cells** in:
+From `SystemCode/`, open and **run all cells** in:
 
 ```
 jupyter notebook setup_neo4j_and_db.ipynb
@@ -132,6 +134,8 @@ curl http://127.0.0.1:11434/api/tags    # should list installed models
 
 ## 6. Install frontend deps
 
+From `SystemCode/`:
+
 ```bash
 cd frontend
 npm install
@@ -141,6 +145,8 @@ cd ..
 ---
 
 ## 7. Start the backend
+
+From `SystemCode/`:
 
 ```bash
 source .venv/bin/activate
@@ -159,7 +165,7 @@ You should see startup logs confirming successful loads of:
 
 ## 8. Start the frontend (new terminal)
 
-The Chrome extension expects the Vite dev server on **port 5173 exactly** (it deep-links to `http://localhost:5173/buyer?...`). Pin the port to avoid Vite auto-bumping to 5174 when something else is running:
+The Chrome extension expects the Vite dev server on **port 5173 exactly** (it deep-links to `http://localhost:5173/buyer?...`). Pin the port to avoid Vite auto-bumping to 5174 when something else is running. From `SystemCode/`:
 
 ```bash
 cd frontend
@@ -194,7 +200,7 @@ The PropertyLens browser extension scrapes a PropertyGuru HDB listing and sends 
 1. Open `**chrome://extensions`** in Chrome (paste it into the address bar).
 2. Toggle **Developer mode** **ON** (top-right of the page).
 3. Click **Load unpacked** (top-left).
-4. In the file picker, navigate to your repo and select the `**extension/`** folder, then click **Select**.
+4. In the file picker, navigate to your repo and select the `**SystemCode/extension/`** folder, then click **Select**.
 5. The "PropertyLens — HDB listing insight" extension card appears with a green ON toggle. Confirm:
   - **Manifest version**: 3
   - **Host permissions**: `https://www.propertyguru.com.sg/`* and `http://localhost:8000/`*
@@ -209,13 +215,13 @@ The PropertyLens browser extension scrapes a PropertyGuru HDB listing and sends 
 
 ### Custom ports / hosts
 
-If you can't run the backend on `:8000` or the frontend on `:5173`, edit two files in the `extension/` folder and reload the unpacked extension:
+If you can't run the backend on `:8000` or the frontend on `:5173`, edit two files in the `SystemCode/extension/` folder and reload the unpacked extension:
 
 
-| File                      | Edit                                                               |
-| ------------------------- | ------------------------------------------------------------------ |
-| `extension/content.js`    | `API_BASE` → backend URL · `BUYER_STUDIO_ORIGIN` → frontend origin |
-| `extension/manifest.json` | `host_permissions` → add your custom backend URL                   |
+| File                                 | Edit                                                               |
+| ------------------------------------ | ------------------------------------------------------------------ |
+| `SystemCode/extension/content.js`    | `API_BASE` → backend URL · `BUYER_STUDIO_ORIGIN` → frontend origin |
+| `SystemCode/extension/manifest.json` | `host_permissions` → add your custom backend URL                   |
 
 
 After editing, return to `chrome://extensions` and click the **🔄 reload** button on the PropertyLens card.
@@ -256,40 +262,50 @@ curl -X POST http://localhost:8000/api/login \
 | Login rejected                                                   | SQLite tables not created                  | Re-run `setup_neo4j_and_db.ipynb`                                 |
 | `port 8000 already in use`                                       | Another uvicorn / process                  | Add `--port 8001` and update `VITE_API_BASE_URL` in `.env`        |
 | Photo-condition card doesn't work                                | `condition_model_*.pth` missing            | Re-run step 3 — it pulls into `hf_data/05_photo_layer/artifacts/` |
-| Old `notebooks/00_project_setup_environment.ipynb` references    | Legacy combined notebook                   | Use the three root-level notebooks instead                        |
+| Old `notebooks/00_project_setup_environment.ipynb` references    | Legacy combined notebook                   | Use the three setup notebooks at the top of `SystemCode/`         |
+| Backend can't find artifacts / `.env` / `data/...`               | Started backend from the wrong cwd         | Activate venv from `SystemCode/`, then `cd backend` before uvicorn |
 
 
 ---
 
 ## Project layout (post-setup)
 
+This repo follows the NUS-ISS IRS-PM submission template:
+
 ```
 PropertyLens/
-├── backend/                  # FastAPI app (uvicorn entry: backend/main.py)
-├── frontend/                 # Vite + React (npm run dev)
-├── extension/                # Chrome extension for PropertyGuru
-├── notebooks/                # Training pipelines, RAG/search builders
-├── scripts/                  # Standalone CLI tools
-├── data/
-│   ├── artifacts/            # ← from HF (model bundle + XAI caches)
-│   ├── feature_data/         # ← from HF (HDB feature CSVs)
-│   ├── amenities/            # in-git fixtures + raw schooling extract from HF
-│   └── propertylens.db       # SQLite (auth, history, wishlist) — created by setup
-├── hf_data/
-│   └── 05_photo_layer/       # ← from HF (condition model)
-├── docs/                     # Architecture / methodology docs
-├── .env                      # ← you create this
-├── upload_artifacts_to_hf.ipynb       # publish artifacts (admin)
-├── download_artifacts_from_hf.ipynb   # ⬅ step 3
-├── setup_neo4j_and_db.ipynb           # ⬅ step 4
-└── HOW_TO_RUN.md             # this file
+├── README.md                            # IRS-PM 7-section project README
+├── ProjectReport/                       # final group-report PDF + user guide PDF
+├── Video/                               # system modelling + use-case demo MP4s
+├── Miscellaneous/
+│   ├── docs/                            # internal architecture / methodology notes
+│   └── images/                          # screenshots used in report and slides
+└── SystemCode/                          # ← all source code lives here
+    ├── HOW_TO_RUN.md                    # this file
+    ├── .env                             # ← you create this in step 2
+    ├── .env.example                     # env-var template
+    ├── backend/                         # FastAPI app (uvicorn entry: backend/main.py)
+    ├── frontend/                        # Vite + React (npm run dev)
+    ├── extension/                       # Chrome extension for PropertyGuru
+    ├── notebooks/                       # Training pipelines, RAG/search builders
+    ├── scripts/                         # Standalone CLI tools
+    ├── data/
+    │   ├── artifacts/                   # ← from HF (model bundle + XAI caches)
+    │   ├── feature_data/                # ← from HF (HDB feature CSVs)
+    │   ├── amenities/                   # in-git fixtures + raw schooling extract from HF
+    │   └── propertylens.db              # SQLite (auth, history, wishlist) — created by setup
+    ├── hf_data/
+    │   └── 05_photo_layer/              # ← from HF (condition model)
+    ├── download_artifacts_from_hf.ipynb # ⬅ step 3
+    ├── setup_neo4j_and_db.ipynb         # ⬅ step 4
+    └── upload_artifacts_to_hf.ipynb     # publish artifacts (admin)
 ```
 
 ---
 
 ## Re-running setup
 
-All three root-level notebooks are **idempotent**:
+All three setup notebooks (at the top of `SystemCode/`) are **idempotent**:
 
 - `download_artifacts_from_hf.ipynb` — `snapshot_download` skips up-to-date files
 - `setup_neo4j_and_db.ipynb` — Neo4j uses `MERGE`, demo user is `if not exists`
