@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+
 # Bootstrap import path so `uvicorn main:app` works from within `backend/`.
 _BACKEND_DIR = Path(__file__).parent
 _REPO_ROOT = _BACKEND_DIR.parent
@@ -114,22 +115,21 @@ async def lifespan(app: FastAPI):
     print(f"   Features: {len(state.feature_cols)}")
     print(f"   CBR cases: {len(state.cbr_df):,}")
 
-    # Photo condition model: loaded lazily on first /api/predict/condition-photo
-    # request so startup isn't blocked by the torchvision import + state_dict load.
-    # Meta is cheap and read eagerly for the endpoint response payload.
+    # Photo condition model: torch/torchvision are already imported at module
+    # level above, so the load here is just file I/O + state_dict (~0.1 s).
     try:
-        from backend.photo_condition import resolve_condition_meta
+        from backend.photo_condition import resolve_condition_meta, get_condition_model
 
         state.condition_model_meta = resolve_condition_meta()
         _cm_meta = state.condition_model_meta or {}
-        if _cm_meta:
+        try:
+            get_condition_model()
             print(
-                f"✅ Photo condition meta read "
-                f"(date={_cm_meta.get('training_date')}, val_mae={_cm_meta.get('val_mae')}); "
-                f"model will load on first request"
+                f"✅ Photo condition model loaded "
+                f"(date={_cm_meta.get('training_date')}, val_mae={_cm_meta.get('val_mae')})"
             )
-        else:
-            print("ℹ️ No photo condition meta sidecar found; model still loads lazily if weights exist")
+        except Exception as _model_err:
+            print(f"⚠️ Photo condition model failed to load: {_model_err}")
     except Exception as e:
         state.condition_model_meta = None
         print(f"   (no condition model meta sidecar: {e})")

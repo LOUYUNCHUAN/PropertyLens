@@ -88,7 +88,7 @@ export const adjustPriceWithPhoto = (file, basePrice) => {
   fd.append('base_price', String(basePrice))
   return API.post('/api/predict/condition-photo', fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000
+    timeout: 300000
   }).then((r) => r.data)
 }
 
