@@ -3,6 +3,8 @@ predict.py — /api/predict, /api/explain/shap, /api/explain/lime
 Uses PropertyLens hybrid cluster bundle under data/artifacts/.
 """
 
+import re
+import requests
 from fastapi import APIRouter
 import numpy as np
 
@@ -103,6 +105,102 @@ def _legacy_ir_to_hybrid_vector(req: PredictRequest) -> np.ndarray:
     return np.array([feat.get(c, 0.0) for c in state.feature_cols], dtype=np.float64)
 
 
+_ONEMAP_SEARCH_URL = "https://www.onemap.gov.sg/api/common/elastic/search"
+_BIG_MALL_RE = re.compile(r"MEGA|HUB|CITY|JUNCTION|POINT|PLAZA|CENTRE", re.I)
+
+
+def _geocode_for_predict(block: str, street_name: str) -> tuple[float, float] | None:
+    """
+    Call OneMap to resolve block + street to (lat, lng). Tries multiple query formats
+    since HDB addresses don't always match with the 'BLK' prefix. Returns None on failure.
+    """
+    candidates = [
+        f"{block} {street_name}",
+        f"BLK {block} {street_name}",
+        street_name,
+    ]
+    for q in candidates:
+        try:
+            resp = requests.get(
+                _ONEMAP_SEARCH_URL,
+                params={"searchVal": q, "returnGeom": "Y", "getAddrDetails": "Y", "pageNum": 1},
+                timeout=8,
+            )
+            results = resp.json().get("results", [])
+            if not results:
+                continue
+            # Prefer a result whose block number matches
+            for r in results:
+                if str(r.get("BLK_NO", "")).strip() == str(block).strip():
+                    lat = float(r.get("LATITUDE", 0))
+                    lng = float(r.get("LONGITUDE", 0))
+                    if lat or lng:
+                        return lat, lng
+            # Fall back to first result
+            lat = float(results[0].get("LATITUDE", 0))
+            lng = float(results[0].get("LONGITUDE", 0))
+            if lat or lng:
+                return lat, lng
+        except Exception:
+            continue
+    return None
+
+
+def _live_geo_features(lat: float, lng: float) -> dict[str, float]:
+    """
+    Compute all geo feature columns from live lat/lng using preloaded amenity CSVs.
+    Replicates the formulas in FeatureDealing.ipynb so values are in-distribution.
+    """
+    from backend.location import compute_nearby, nearest_highway_dist_m, _amenity_frames, _load_amenities
+
+    _load_amenities()
+    nearby = compute_nearby(lat, lng, radius_m=15000.0)
+    feats: dict[str, float] = {}
+
+    mrt_items = nearby.get("mrt", [])
+    if mrt_items:
+        feats["dist_to_mrt_m"] = float(mrt_items[0]["dist_m"])
+
+    hawker_items = nearby.get("hawker", [])
+    if hawker_items:
+        feats["dist_to_foodcourt_m"] = float(hawker_items[0]["dist_m"])
+
+    mall_items = nearby.get("mall", [])
+    if mall_items:
+        feats["dist_to_nearest_mall_m"] = float(mall_items[0]["dist_m"])
+
+    malls_3km = [m for m in mall_items if m["dist_m"] <= 3000]
+    feats["mall_count_3km"] = float(len(malls_3km))
+    if malls_3km:
+        wa = sum(
+            (1.5 if _BIG_MALL_RE.search(m.get("name", "")) else 1.0)
+            / (max(m["dist_m"] / 1000.0, 0.05) + 0.25)
+            for m in malls_3km
+        )
+        feats["mall_weighted_access_3km"] = wa
+    else:
+        feats["mall_weighted_access_3km"] = 0.0
+
+    school_items = nearby.get("school", [])
+    if school_items:
+        feats["dist_to_nearest_school_m"] = float(school_items[0]["dist_m"])
+
+    schools_1km = [s for s in school_items if s["dist_m"] <= 1000]
+    feats["school_count_1km"] = float(len(schools_1km))
+    feats["primary_school_count_1km"] = float(len(schools_1km))
+    # primary_school_quality_1km_weighted and primary_school_top_quality_1km are
+    # intentionally NOT overridden here. They were trained on sgschooling Phase 2B/2C
+    # competition ratios (range ~11–24) which cannot be reproduced from mean_oversubscription
+    # in the amenity CSV (different metric, different scale). Overriding with our proxy
+    # value (~94) would be 60+ std devs out of distribution and distort predictions.
+
+    hw_dist = nearest_highway_dist_m(lat, lng)
+    if hw_dist is not None:
+        feats["dist_to_highway_m"] = float(hw_dist)
+
+    return feats
+
+
 def flat_to_feature_vector_with_debug(req: PredictRequest) -> tuple[np.ndarray, HybridPredictionDebug, dict]:
     """Returns (feature_vector, debug_info, features_dict)."""
     from backend.hybrid_inference import (
@@ -131,26 +229,66 @@ def flat_to_feature_vector_with_debug(req: PredictRequest) -> tuple[np.ndarray, 
             sale_month,
         )
         X = built["vector"].ravel()
+        feat_dict = built["features_dict"]
         note = (built["imputation_note"] or "").strip()
+    else:
+        X = _legacy_ir_to_hybrid_vector(req)
+        feat_dict = {c: float(X[i]) for i, c in enumerate(state.feature_cols)}
+        note = "Legacy field mapping (no address lookup in feature table)."
+
+    # Always enrich geo features from live OneMap geocode + amenity CSVs.
+    # This overrides both feature-table values (which may be stale) and town-level
+    # medians (which are imprecise) with the actual distances for this specific address.
+    block_s = str(req.block or "").strip()
+    street_s = str(req.street_name or "").strip()
+    geo_note: str | None = None
+    if block_s and street_s:
+        coords = _geocode_for_predict(block_s, street_s)
+        if coords is not None:
+            lat, lng = coords
+            live_geo = _live_geo_features(lat, lng)
+            col_index = {c: i for i, c in enumerate(state.feature_cols)}
+            for feat_name, val in live_geo.items():
+                if feat_name in col_index:
+                    X[col_index[feat_name]] = val
+                    feat_dict[feat_name] = val
+            geo_note = (
+                f"Live geo from OneMap ({lat:.5f},{lng:.5f}): "
+                f"{len(live_geo)} geo features refreshed."
+            )
+
+    # primary_school_top_quality_1km is missing from the current feature CSV so
+    # build_yc_hybrid_vector always returns 0 for it. Fill from the weighted quality
+    # (same sgschooling metric, same ~14 mean during training) so cluster routing
+    # sees an in-distribution value instead of a constant zero.
+    col_index_full = {c: i for i, c in enumerate(state.feature_cols)}
+    top_idx = col_index_full.get("primary_school_top_quality_1km")
+    wt_idx = col_index_full.get("primary_school_quality_1km_weighted")
+    if top_idx is not None and wt_idx is not None and X[top_idx] == 0.0:
+        wt_val = float(feat_dict.get("primary_school_quality_1km_weighted", X[wt_idx]))
+        if wt_val > 0.0:
+            X[top_idx] = wt_val
+            feat_dict["primary_school_top_quality_1km"] = wt_val
+
+    combined_note = " ".join(filter(None, [note, geo_note])) or None
+
+    if use_addr:
         dbg = HybridPredictionDebug(
             lookup_matched=built["lookup_matched"],
             matched_address_key=built["matched_address_key"],
-            imputation_note=note if note else None,
-            cluster_id=cluster_label_for_X(built["vector"], state.hybrid_bundle),
+            imputation_note=combined_note,
+            cluster_id=cluster_label_for_X(X.reshape(1, -1), state.hybrid_bundle),
             feature_table_csv=ft_path,
         )
-        return X, dbg, built["features_dict"]
-
-    X = _legacy_ir_to_hybrid_vector(req)
-    feat = {c: float(X[i]) for i, c in enumerate(state.feature_cols)}
-    dbg = HybridPredictionDebug(
-        lookup_matched=False,
-        matched_address_key=None,
-        imputation_note="Legacy field mapping (no address lookup in feature table).",
-        cluster_id=cluster_label_for_X(X.reshape(1, -1), state.hybrid_bundle),
-        feature_table_csv=ft_path,
-    )
-    return X, dbg, feat
+    else:
+        dbg = HybridPredictionDebug(
+            lookup_matched=False,
+            matched_address_key=None,
+            imputation_note=combined_note,
+            cluster_id=cluster_label_for_X(X.reshape(1, -1), state.hybrid_bundle),
+            feature_table_csv=ft_path,
+        )
+    return X, dbg, feat_dict
 
 
 def flat_to_feature_vector(req: PredictRequest) -> np.ndarray:
