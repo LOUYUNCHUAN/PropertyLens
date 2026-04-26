@@ -9,7 +9,9 @@
 **/03_ml_layer/test/outputs/
 
 # ── OS / editor / Python ───────────────────────────────────────────
-.claude/
+# Ignore everything inside .claude/ except the shared project-context brief
+.claude/*
+!.claude/CLAUDE.md
 .cursor/*.log
 .DS_Store
 .ipynb_checkpoints/
