@@ -225,6 +225,13 @@ export const streamPropertySearchChat = (payload, callbacks = {}) => {
     ? `${String(base).replace(/\/$/, '')}/api/property-search-chat`
     : '/api/property-search-chat'
   const headers = { 'Content-Type': 'application/json' }
+  // streamPropertySearchChat uses raw fetch() (not the axios `API` instance),
+  // so the global Authorization interceptor at client.js:20-28 does not fire.
+  // Attach the JWT manually so backend tools that scope by username (e.g. the
+  // shortlist projection in property_search_chat.py) see the right user.
+  const tok =
+    typeof localStorage !== 'undefined' ? localStorage.getItem('hdb_token') : null
+  if (tok) headers.Authorization = `Bearer ${tok}`
   const ctrl = new AbortController()
   const tid = setTimeout(() => ctrl.abort(), 180000)
 

@@ -183,16 +183,31 @@ def extract_flat_from_message(msg: str) -> Optional[PredictRequest]:
     if not text:
         return None
 
-    # Accept both:
-    #   "BLK 864 TAMPINES STREET 83, 4 room, 122 sqm, ..."
-    # and natural phrasing:
-    #   "Predict price for BLK 864 TAMPINES STREET 83, 4 room, 122 sqm, ..."
-    before_comma = text.split(",")[0].strip()
+    # Address parsing has two passes:
+    #   1. Prefer "BLK <num> <street>" with explicit blk/block keyword. This
+    #      handles natural phrasing like "Show me 5 similar past sales for
+    #      BLK 864 Tampines St 83" without the leading "5" being mistaken
+    #      for the block. Street capture stops at common terminator tokens
+    #      (priced/sold/lease/with/under/for/that, "<n> room", "<n> sqm")
+    #      so questions like "Why is BLK 864 ... priced that way?" don't
+    #      pollute the street_name.
+    #   2. Fallback to the legacy bare "<num> <street>" before-the-comma path
+    #      so users who type just "864 Tampines St 83, 4 room, 122 sqm" still
+    #      work.
     addr_m = re.search(
-        r"(?:^|\b)(?:blk\s+|block\s+)?(\d{1,4}[a-z]?)\s+(.+?)\s*$",
-        before_comma,
+        r"\b(?:blk|block)\.?\s+(\d{1,4}[a-z]?)\s+([A-Za-z][A-Za-z0-9 .'\-]+?)"
+        r"(?=[,?.!]|\s*$|\s+(?:priced|sold|lease|with|under|for|that|today)\b|"
+        r"\s+\d+\s*(?:room|rm|sqm|sq\.?m|m²|m2)\b)",
+        text,
         re.I,
     )
+    if not addr_m:
+        before_comma = text.split(",")[0].strip()
+        addr_m = re.search(
+            r"(?:^|\b)(\d{1,4}[a-z]?)\s+(.+?)\s*$",
+            before_comma,
+            re.I,
+        )
     if not addr_m:
         return None
     block = addr_m.group(1).upper()

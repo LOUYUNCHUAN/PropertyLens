@@ -38,7 +38,29 @@ from backend.property_search_rag import (
     get_property_search_graph_data,
     run_property_search_rag,
 )
+from backend.shortlist_graph import (
+    ShortlistGraphUnavailable,
+    ensure_user_projected,
+    fetch_town_overlap_vs_history,
+    fetch_user_saves_near_school,
+    fetch_user_shortlist_graph,
+    format_saves_near_school_rows,
+    format_shortlist_graph_rows,
+    format_town_overlap_vs_history,
+)
 from backend.sql_models import WishlistListing
+
+
+def _wants_town_overlap(msg: str) -> bool:
+    """Secondary trigger for the per-town aggregate query."""
+    m = (msg or "").lower()
+    if "town" not in m:
+        return False
+    keys = (
+        "overlap", "by town", "vs history", "historical median",
+        "town comparison", "compare town", "median price",
+    )
+    return any(k in m for k in keys)
 
 
 router = APIRouter()
@@ -105,29 +127,64 @@ def property_search_chat(
         tool_sections: list[str] = []
         flat_for_tools: PredictRequest | None = None
 
-        # Shortlist section (DB)
+        # Shortlist section — prefer the Neo4j graph view (saves enriched with
+        # historical-sale comparison) and fall back to the legacy SQL render
+        # when Neo4j is unavailable.
         if wants_shortlist(msg) and eff_username:
             try:
-                rows = (
+                sql_rows = (
                     db.query(WishlistListing)
                     .filter(WishlistListing.username == eff_username)
                     .order_by(WishlistListing.created_at.desc())
                     .limit(40)
                     .all()
                 )
-                if rows:
-                    tool_sections.append("### Your shortlist\n\n" + format_shortlist_rows(rows))
-                    # Fallback flat for tools: use the most recent wishlist payload, if any
-                    if flat_for_tools is None:
-                        for r in rows:
-                            if r.payload_json:
-                                try:
-                                    flat_for_tools = PredictRequest.model_validate(r.payload_json)
-                                    break
-                                except Exception:
-                                    continue
             except Exception as e:
-                tool_sections.append(f"### Your shortlist\n\n(shortlist unavailable: {type(e).__name__}: {e})")
+                sql_rows = []
+                tool_sections.append(
+                    f"### Your shortlist\n\n(shortlist unavailable: {type(e).__name__}: {e})"
+                )
+
+            graph_section_md: str | None = None
+            town_overlap_md: str | None = None
+            if sql_rows:
+                try:
+                    ensure_user_projected(eff_username, sql_rows)  # idempotent self-heal
+                    graph_rows = fetch_user_shortlist_graph(eff_username, limit=40)
+                    if graph_rows:
+                        graph_section_md = (
+                            "### Your shortlist (graph view — vs historical sales)\n\n"
+                            + format_shortlist_graph_rows(graph_rows)
+                        )
+                    if _wants_town_overlap(msg):
+                        overlap_rows = fetch_town_overlap_vs_history(eff_username)
+                        if overlap_rows:
+                            town_overlap_md = (
+                                "### Your saves by town vs historical median\n\n"
+                                + format_town_overlap_vs_history(overlap_rows)
+                            )
+                except ShortlistGraphUnavailable:
+                    graph_section_md = None
+                    town_overlap_md = None
+
+            if graph_section_md:
+                tool_sections.append(graph_section_md)
+                if town_overlap_md:
+                    tool_sections.append(town_overlap_md)
+            elif sql_rows:
+                # Strict fallback to today's behaviour when the graph view is unreachable.
+                tool_sections.append("### Your shortlist\n\n" + format_shortlist_rows(sql_rows))
+
+            # Fallback flat for tools (predict/CBR/SHAP) — uses the most recent
+            # wishlist payload regardless of which render path fired above.
+            if flat_for_tools is None:
+                for r in sql_rows:
+                    if r.payload_json:
+                        try:
+                            flat_for_tools = PredictRequest.model_validate(r.payload_json)
+                            break
+                        except Exception:
+                            continue
 
         # Extract flat from message (predict/CBR/SHAP)
         if flat_for_tools is None and (wants_predict(msg) or wants_cbr(msg) or wants_shap(msg)):
@@ -159,6 +216,15 @@ def property_search_chat(
         tool_only_mode = bool(flat_for_tools) and (
             wants_predict(msg) or wants_cbr(msg) or wants_shap(msg)
         ) and not looks_like_property_search
+
+        # Shortlist queries: when we already rendered the user's saves (graph or SQL)
+        # and the message doesn't also ask for a generic property search, skip RAG so
+        # the LLM doesn't invent unrelated "top matches" alongside the real shortlist.
+        shortlist_rendered = wants_shortlist(msg) and any(
+            sec.startswith("### Your shortlist") for sec in tool_sections
+        )
+        if shortlist_rendered and not looks_like_property_search:
+            tool_only_mode = True
 
         if flat_for_tools is not None and wants_predict(msg):
             try:
@@ -207,6 +273,47 @@ def property_search_chat(
                 yield "data: [PARAMS]" + json.dumps(result.params) + "[/PARAMS]\n\n"
             except Exception:
                 pass
+
+            # When the search is "near a famous school", anchor the section
+            # header on the school AND cross-reference the user's own
+            # shortlist so they see "you already saved BLK X near this school"
+            # before the historical comps. The rows themselves are then
+            # rendered with the searched school explicitly tagged on each line
+            # (so the user never confuses "near AI TONG" with "0.3 km from the
+            # school I asked about").
+            params_obj = result.params or {}
+            searched_school: str | None = None
+            if params_obj.get("special_query_type") == "near_famous_school":
+                school_val = (params_obj.get("filters") or {}).get("school_name")
+                if school_val:
+                    searched_school = str(school_val).strip()
+
+            # Cross-reference the user's saves against the searched school —
+            # only when logged in AND the special-school path fired.
+            if searched_school and eff_username:
+                try:
+                    save_rows = fetch_user_saves_near_school(eff_username, searched_school)
+                    if save_rows:
+                        md_parts.append(
+                            f"### From your shortlist near {searched_school}\n\n"
+                            + format_saves_near_school_rows(save_rows, searched_school)
+                        )
+                except ShortlistGraphUnavailable:
+                    pass  # silent — graph view is best-effort, comps still render
+
+            # Surface the structured comp rows BEFORE the LLM narrative so the
+            # user always sees the factual table — even if the LLM drifts. Rows
+            # are framed as historical comparable sales, not current listings.
+            if result.rows:
+                if searched_school:
+                    header = f"### Historical comparables near {searched_school}"
+                else:
+                    header = "### Historical comparables matching your criteria"
+                md_parts.append(
+                    f"{header}\n\n"
+                    "_Past resale transactions, most recent sale per address — not current listings._\n\n"
+                    + format_rows_markdown(result.rows, limit=5, searched_school=searched_school)
+                )
 
             answer = (result.answer or "").strip()
             if answer:

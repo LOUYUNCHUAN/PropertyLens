@@ -181,3 +181,99 @@ def test_property_search_chat_smalltalk_ack_fast_path():
         assert res.status_code == 200
         assert "You're welcome" in res.text
 
+
+# ---------- shortlist graph view branches --------------------------------
+
+
+def _shortlist_app_with_db():
+    """Helper: build the chat app with one stub WishlistListing row for username 'demo'."""
+    app = _make_app()
+    fake = type(
+        "FakeResult",
+        (),
+        {"answer": "answer", "params": {"weights": {}, "filters": {}, "special_query_type": None}, "rows": []},
+    )()
+    row = type(
+        "Row",
+        (),
+        {
+            "id": 99,
+            "display_label": "Listing",
+            "payload_json": {"block": "201", "street_name": "TAMPINES ST 21",
+                              "town": "TAMPINES", "flat_type": "4 ROOM"},
+            "listing_url": None,
+            "listing_price": 600000.0,
+            "predicted_price": 580000.0,
+            "created_at": 0,
+            "username": "demo",
+            "source": "buyer",
+        },
+    )()
+
+    class _Q:
+        def filter(self, *_, **__): return self
+        def order_by(self, *_, **__): return self
+        def limit(self, *_): return self
+        def all(self): return [row]
+    class _DB:
+        def query(self, *_): return _Q()
+
+    import backend.property_search_chat as mod
+    app.dependency_overrides[mod.get_db] = lambda: _DB()
+    return app, fake
+
+
+def test_property_search_chat_uses_graph_view_when_available():
+    app, fake = _shortlist_app_with_db()
+    client = TestClient(app)
+
+    graph_rows = [
+        {"sql_id": 99, "address_key": "201 TAMPINES ST 21", "town": "TAMPINES",
+         "flat_type": "4 ROOM", "listing_price": 600000, "predicted_price": 580000,
+         "historical_sale_price": 570000, "historical_sale_year": 2023,
+         "in_historical_graph": True, "nearest_famous_school": "TAO NAN PRIMARY",
+         "dist_to_famous_school_km": 1.2, "dist_to_mrt_m": 420, "score_value": 7.5,
+         "listing_url": None, "created_at_iso": "2026-04-15T10:00:00"},
+    ]
+    with (
+        patch("backend.property_search_chat.resolve_effective_username", return_value="demo"),
+        patch("backend.property_search_chat.run_property_search_rag", return_value=fake),
+        patch("backend.property_search_chat.ensure_user_projected", return_value=1),
+        patch("backend.property_search_chat.fetch_user_shortlist_graph", return_value=graph_rows),
+    ):
+        res = client.post(
+            "/api/property-search-chat",
+            json={"message": "what's in my shortlist vs historical sales", "history": []},
+            headers={"Authorization": "Bearer test"},
+        )
+        assert res.status_code == 200
+        body = res.text
+        # Graph view header replaces the legacy "### Your shortlist" exactly when graph fires
+        assert "Your shortlist (graph view" in body
+        assert "201 TAMPINES ST 21" in body
+        # Legacy SQL-only header should NOT appear when graph render succeeded
+        assert "### Your shortlist\\n" not in body  # SSE-escaped newline form
+
+
+def test_property_search_chat_falls_back_to_sql_when_graph_unavailable():
+    from backend.shortlist_graph import ShortlistGraphUnavailable
+
+    app, fake = _shortlist_app_with_db()
+    client = TestClient(app)
+    with (
+        patch("backend.property_search_chat.resolve_effective_username", return_value="demo"),
+        patch("backend.property_search_chat.run_property_search_rag", return_value=fake),
+        patch("backend.property_search_chat.ensure_user_projected",
+              side_effect=ShortlistGraphUnavailable("neo4j down")),
+    ):
+        res = client.post(
+            "/api/property-search-chat",
+            json={"message": "show my shortlist", "history": []},
+            headers={"Authorization": "Bearer test"},
+        )
+        assert res.status_code == 200
+        body = res.text
+        # Falls back to legacy SQL render
+        assert "### Your shortlist" in body
+        assert "graph view" not in body
+

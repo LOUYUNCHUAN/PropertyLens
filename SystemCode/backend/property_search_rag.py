@@ -141,7 +141,24 @@ Now extract parameters for this query:
 """
 
 _STAGE3_SYSTEM = """\
-You are a helpful Singapore HDB property advisor. Given property search results, answer the user's question in 2-3 clear sentences. Mention specific properties by address if helpful. Be concise and factual."""
+You are a Singapore HDB market analyst.
+
+The "Search results" below are HISTORICAL COMPARABLE SALES from the HDB
+resale registry — NOT current listings for sale. Each entry shows the most
+recent transaction at that address, with the year of sale. Treat them as
+price evidence and pattern signals, not as inventory the user can purchase.
+
+Answer the user's question in 2-3 sentences:
+ - Reference specific past sales by address, year, and price (not generic
+   placeholders).
+ - When prices come up, always pair them with the year of the sale
+   ("sold in 2024 for $828,000").
+ - If the user asks "where can I buy" or "are these for sale", clarify that
+   these are historical comps and suggest they browse PropertyGuru or 99.co
+   for live listings.
+ - NEVER invent addresses, blocks, prices, or years not present in the
+   results below. If the results are empty, say so plainly.
+ - Be concise. No marketing language."""
 
 _STAGE3_USER = """\
 Search results:
@@ -450,46 +467,103 @@ def summarize_results(query: str, rows: list[dict[str, Any]]) -> str:
     return _ollama_generate(prompt, timeout_s=180)
 
 
-def format_rows_markdown(rows: list[dict[str, Any]], limit: int = 5) -> str:
+def format_rows_markdown(
+    rows: list[dict[str, Any]],
+    limit: int = 5,
+    *,
+    searched_school: str | None = None,
+) -> str:
+    """Render Cypher rows as historical-comparable-sale lines.
+
+    Every row is a past transaction (the most recent sale per address). The
+    formatter makes that explicit by leading with `sold YYYY for $X` rather
+    than a bare price (which reads as a current asking price). The composite
+    `score` field is intentionally omitted — surfacing it to the LLM
+    encourages "ranked listings" framing; the comp evidence stands on its own.
+
+    When `searched_school` is provided (special "near famous school" path),
+    every row's school tag explicitly anchors on that searched school so the
+    user sees "0.3 km from POI CHING SCHOOL" instead of the property's
+    truly-nearest school which may be a different one. If the property's
+    `nearest_famous_school_name` differs from the searched school, that's
+    appended as a small qualifier so the user retains the secondary signal.
+    """
     if not rows:
-        return "_No matching properties found with the inferred filters._"
+        return "_No matching historical sales found with the inferred filters._"
     lines: list[str] = []
     for i, r in enumerate(rows[:limit], start=1):
         addr = r.get("address_key") or f"BLK {r.get('block','')} {r.get('street_name','')}".strip()
         town = r.get("town") or ""
         flat_type = r.get("flat_type") or ""
         price = r.get("resale_price")
+        year = r.get("transaction_year")
         area = r.get("floor_area_sqm")
         lease = r.get("lease_remaining_years")
         mrt = r.get("dist_to_mrt_m")
         school = r.get("nearest_famous_school_name")
         dk = r.get("dist_to_nearest_famous_school_km")
-        score = r.get("composite_score")
+
+        # Headline: address + the past sale event
+        sale_label = None
+        if price is not None and year is not None:
+            try:
+                sale_label = f"sold {int(year)} for ${float(price):,.0f}"
+            except (TypeError, ValueError):
+                sale_label = f"sold {year} for ${price}"
+        elif price is not None:
+            try:
+                sale_label = f"last sale ${float(price):,.0f}"
+            except (TypeError, ValueError):
+                sale_label = f"last sale ${price}"
 
         parts = [f"- **{i}. {addr}**"]
+        if sale_label:
+            parts.append(f" — _{sale_label}_")
+
         meta = []
         if town:
             meta.append(town)
         if flat_type:
             meta.append(flat_type)
-        if price is not None:
-            try:
-                meta.append(f"${float(price):,.0f}")
-            except Exception:
-                meta.append(f"${price}")
         if area is not None:
-            meta.append(f"{area} sqm")
+            try:
+                meta.append(f"{int(round(float(area)))} sqm")
+            except (TypeError, ValueError):
+                meta.append(f"{area} sqm")
         if lease is not None:
-            meta.append(f"lease {lease}y")
+            try:
+                meta.append(f"lease {int(round(float(lease)))}y")
+            except (TypeError, ValueError):
+                meta.append(f"lease {lease}y")
         if mrt is not None:
-            meta.append(f"MRT {mrt}m")
-        if school:
+            try:
+                meta.append(f"MRT {int(round(float(mrt)))}m")
+            except (TypeError, ValueError):
+                meta.append(f"MRT {mrt}m")
+        if searched_school:
+            # Special path: anchor on the searched school explicitly. dk in
+            # this path is the distance to the SEARCHED school (per the
+            # _NEAR_SCHOOL_CYPHER `r.distance_km AS dist_to_nearest_famous_school_km`),
+            # not necessarily the property's overall nearest.
             if dk is not None:
-                meta.append(f"near {school} ({dk} km)")
+                try:
+                    meta.append(f"{float(dk):.1f} km from {searched_school}")
+                except (TypeError, ValueError):
+                    meta.append(f"near {searched_school}")
+            else:
+                meta.append(f"near {searched_school}")
+            # If the property's truly-nearest famous school is a different
+            # one, surface it as a small secondary signal.
+            if school and school.strip().upper() != searched_school.strip().upper():
+                meta.append(f"closest fam. school: {school}")
+        elif school:
+            if dk is not None:
+                try:
+                    meta.append(f"near {school} ({float(dk):.1f} km)")
+                except (TypeError, ValueError):
+                    meta.append(f"near {school} ({dk} km)")
             else:
                 meta.append(f"near {school}")
-        if score is not None:
-            meta.append(f"score {score}")
         if meta:
             parts.append("  \n  " + " · ".join(meta))
         lines.append("".join(parts))
