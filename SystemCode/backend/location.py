@@ -270,8 +270,15 @@ def _school_csv_row_for_poi(df: pd.DataFrame, lat: float, lng: float, name: str)
 
 def enrich_map_snapshot_json(map_snap: dict[str, Any] | None) -> dict[str, Any] | None:
     """
-    Refresh derived nearby layers on read: highway samples from current CSV, school tier from
-    school_popularity_combined.csv. Wishlist rows store frozen map_snapshot_json without migrations.
+    Refresh nearby amenity layers on read so wishlist rows reflect the current
+    amenity CSVs (schools.csv was rebuilt from MOE raw — see
+    scripts/rebuild_schools_amenity_from_moe.py — and old snapshots otherwise
+    keep stale rows like student-care centres or miss newly-added famous
+    primaries). The frozen `geocode` is the only stable anchor; everything in
+    `nearby` is recomputed from current data when geocode is present.
+
+    For snapshots without geocode (rare), fall back to the legacy behaviour of
+    only patching school `tier`/`mean_oversubscription` in place.
     """
     if not map_snap or not isinstance(map_snap, dict):
         return map_snap
@@ -288,10 +295,18 @@ def enrich_map_snapshot_json(map_snap: dict[str, Any] | None) -> dict[str, Any] 
         except (TypeError, ValueError):
             lat_f = lng_f = None
         if lat_f is not None and lng_f is not None:
+            # Recompute every amenity category from the current CSVs. Replaces
+            # the frozen lists wholesale so newly-added POIs (e.g. famous
+            # primaries) appear and dropped rows (e.g. student-care centres)
+            # disappear without requiring a re-save.
             full = compute_nearby(lat_f, lng_f, 2000.0)
-            nearby["highway"] = full.get("highway") or []
-            nearby["highway_segments"] = full.get("highway_segments") or []
+            for cat in ("mrt", "lrt", "school", "hawker", "mall", "highway", "highway_segments"):
+                if cat in full:
+                    nearby[cat] = full.get(cat) or []
+            return out
 
+    # No geocode — fall back to the legacy in-place tier patch on whatever
+    # frozen schools the snapshot already has.
     schools = nearby.get("school")
     if not isinstance(schools, list) or not schools:
         return out
