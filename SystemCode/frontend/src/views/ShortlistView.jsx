@@ -9,7 +9,8 @@ import {
   deleteWishlistItem,
   validateListing,
   nlSearchShortlist,
-  getCBR
+  getCBR,
+  predictPrice
 } from '../api/client.js'
 import {
   wishlistDetailToSnapshot,
@@ -27,7 +28,7 @@ import {
   personaHighlightColumn
 } from '../lib/shortlistPersonaUtils.js'
 import NlPlanChips, { unknownTagsById, UNKNOWN_LABEL } from '../components/NlPlanChips.jsx'
-import { Home, LayoutGrid, Map as MapIcon, Puzzle, Search, X } from 'lucide-react'
+import { Home, LayoutGrid, Map as MapIcon, Puzzle, RefreshCw, Search, X } from 'lucide-react'
 import LocationMap from '../components/LocationMap.jsx'
 import CBRTable from '../components/CBRTable.jsx'
 import CompositeShapPanel from '@/components/buyer/CompositeShapPanel.jsx'
@@ -190,6 +191,10 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
   const [removeError, setRemoveError] = useState(null)
   const [refreshedCbr, setRefreshedCbr] = useState(null)
   const [refreshState, setRefreshState] = useState('idle')   // 'idle' | 'loading' | 'error'
+  const [livePrediction, setLivePrediction] = useState(null)
+  const [predictRefreshState, setPredictRefreshState] = useState('idle')
+  const [refreshNonce, setRefreshNonce] = useState(0)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(null)
 
   useEffect(() => {
     if (!itemId || !username) return
@@ -198,14 +203,19 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
       .catch((e) => setErr(e?.message || 'Failed to load'))
   }, [itemId, username])
 
-  // Reset live-CBR state when switching to a different shortlist row.
+  // Reset live-CBR + live-prediction + SHAP nonce when switching to a different
+  // shortlist row.
   useEffect(() => {
     setRefreshedCbr(null)
     setRefreshState('idle')
+    setLivePrediction(null)
+    setPredictRefreshState('idle')
+    setRefreshNonce(0)
+    setLastRefreshedAt(null)
   }, [itemId])
 
   // Always fetch CBR live (matches Buyer view). Falls back to the saved
-  // snapshot silently if the call fails.
+  // snapshot silently if the call fails. Re-runs whenever refreshNonce bumps.
   useEffect(() => {
     const flat = detail?.payload_json
     if (!flat) return
@@ -224,6 +234,28 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
     return () => {
       cancelled = true
     }
+  }, [detail?.payload_json, refreshNonce])
+
+  const handleRefreshAll = useCallback(async () => {
+    const flat = detail?.payload_json
+    if (!flat) return
+    setPredictRefreshState('loading')
+    try {
+      const fresh = await predictPrice(flat)
+      setLivePrediction({
+        predicted_price: fresh.predicted_price,
+        confidence_low: fresh.confidence_low,
+        confidence_high: fresh.confidence_high,
+        debug: fresh.debug,
+      })
+      setLastRefreshedAt(new Date())
+      setPredictRefreshState('idle')
+    } catch (e) {
+      setPredictRefreshState('error')
+    }
+    // Bumping the nonce re-runs the CBR effect and remounts the SHAP panel,
+    // which causes its internal effect to refetch composite SHAP for `flat`.
+    setRefreshNonce((n) => n + 1)
   }, [detail?.payload_json])
 
   const cbrSnapshotRows = detail?.cbr_snapshot_json || []
@@ -321,36 +353,76 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
           )}
           {detail && (
             <>
-              <div className="grid grid-cols-2 gap-3 text-[13px]">
-                <div className="rounded-xl border border-border bg-card p-3">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    Model estimate
-                  </div>
-                  <div className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                    S${Math.round(detail.predicted_price).toLocaleString()}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {detail.confidence_low != null && detail.confidence_high != null
-                      ? `S$${Math.round(detail.confidence_low).toLocaleString()} – S$${Math.round(detail.confidence_high).toLocaleString()}`
-                      : ''}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border bg-card p-3">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    Listing price
-                  </div>
-                  <div className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                    {detail.listing_price != null
-                      ? `S$${Math.round(detail.listing_price).toLocaleString()}`
-                      : '—'}
-                  </div>
-                  {gapPct(detail.listing_price, detail.predicted_price) != null && (
-                    <div className="text-[11px] text-muted-foreground">
-                      {gapPct(detail.listing_price, detail.predicted_price).toFixed(1)}% vs model
+              {(() => {
+                const displayedPrice =
+                  livePrediction?.predicted_price ?? detail.predicted_price
+                const displayedLow =
+                  livePrediction?.confidence_low ?? detail.confidence_low
+                const displayedHigh =
+                  livePrediction?.confidence_high ?? detail.confidence_high
+                const isLive = livePrediction != null
+                const refreshing = predictRefreshState === 'loading' || refreshState === 'loading'
+                return (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[11px] text-muted-foreground">
+                        {isLive ? (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+                            Live · refreshed {lastRefreshedAt ? formatRelativeTime(lastRefreshedAt.toISOString()) : 'just now'}
+                          </span>
+                        ) : (
+                          <span>Showing saved snapshot.</span>
+                        )}
+                        {predictRefreshState === 'error' && (
+                          <span className="ml-2 text-destructive">Refresh failed — showing previous values.</span>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleRefreshAll}
+                        disabled={refreshing || !detail?.payload_json}
+                        aria-label="Refresh AI estimate, comparables and SHAP"
+                      >
+                        <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
+                        {refreshing ? 'Refreshing…' : 'Refresh AI estimate'}
+                      </Button>
                     </div>
-                  )}
-                </div>
-              </div>
+                    <div className="grid grid-cols-2 gap-3 text-[13px]">
+                      <div className="rounded-xl border border-border bg-card p-3">
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Model estimate {isLive && <span className="ml-1 text-emerald-600 dark:text-emerald-400">(live)</span>}
+                        </div>
+                        <div className="font-mono text-lg font-semibold tabular-nums text-foreground">
+                          S${Math.round(displayedPrice).toLocaleString()}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {displayedLow != null && displayedHigh != null
+                            ? `S$${Math.round(displayedLow).toLocaleString()} – S$${Math.round(displayedHigh).toLocaleString()}`
+                            : ''}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-border bg-card p-3">
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Listing price
+                        </div>
+                        <div className="font-mono text-lg font-semibold tabular-nums text-foreground">
+                          {detail.listing_price != null
+                            ? `S$${Math.round(detail.listing_price).toLocaleString()}`
+                            : '—'}
+                        </div>
+                        {gapPct(detail.listing_price, displayedPrice) != null && (
+                          <div className="text-[11px] text-muted-foreground">
+                            {gapPct(detail.listing_price, displayedPrice).toFixed(1)}% vs model
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )
+              })()}
 
               {detail.listing_url && (
                 <a
@@ -386,7 +458,7 @@ function ShortlistDetailModal({ itemId, username, onClose, onRemoved }) {
                   Price drivers (Composite SHAP)
                 </div>
                 {p && Object.keys(p).length > 0 ? (
-                  <CompositeShapPanel flat={p} hideStackBreakdown />
+                  <CompositeShapPanel key={`shap-${refreshNonce}`} flat={p} hideStackBreakdown />
                 ) : (
                   <p className="text-[12px] text-muted-foreground">
                     No saved flat payload to compute SHAP.
@@ -490,6 +562,13 @@ export default function ShortlistView() {
   const [mapSelectedIds, setMapSelectedIds] = useState(() => new Set())
   const mapSelectionInitRef = useRef(false)
   const [wishlistDetailsSettled, setWishlistDetailsSettled] = useState(false)
+  // Live AI predictions overlaid on top of saved snapshots — populated by the
+  // global refresh button. Empty until the user explicitly asks for a refresh.
+  const [livePredictionsById, setLivePredictionsById] = useState({})
+  const [payloadsById, setPayloadsById] = useState({})
+  const [globalRefreshState, setGlobalRefreshState] = useState('idle') // 'idle' | 'loading' | 'error'
+  const [globalRefreshProgress, setGlobalRefreshProgress] = useState({ done: 0, total: 0 })
+  const [lastGlobalRefreshAt, setLastGlobalRefreshAt] = useState(null)
   // Forces re-render every 60s so "saved X ago" labels stay fresh (BUG-124).
   const [, setNowTick] = useState(0)
   const tableRef = useRef(null)
@@ -516,6 +595,11 @@ export default function ShortlistView() {
       setSnapshotsById({})
       setGeocodeById({})
       setNearbyById({})
+      setPayloadsById({})
+      setLivePredictionsById({})
+      setGlobalRefreshState('idle')
+      setGlobalRefreshProgress({ done: 0, total: 0 })
+      setLastGlobalRefreshAt(null)
       mapSelectionInitRef.current = false
       setMapSelectedIds(new Set())
       setWishlistDetailsSettled(false)
@@ -539,6 +623,7 @@ export default function ShortlistView() {
         const snaps = {}
         const geo = {}
         const near = {}
+        const pld = {}
         for (let i = 0; i < rows.length; i++) {
           const s = settled[i]
           if (s.status !== 'fulfilled') continue
@@ -546,6 +631,7 @@ export default function ShortlistView() {
           const mapSnap = d.map_snapshot_json || {}
           geo[d.id] = mapSnap.geocode ?? null
           near[d.id] = mapSnap.nearby ?? null
+          if (d.payload_json) pld[d.id] = d.payload_json
           const snap = wishlistDetailToSnapshot(d)
           if (!snap) continue
           snaps[d.id] = snap
@@ -560,13 +646,25 @@ export default function ShortlistView() {
         setSnapshotsById(snaps)
         setGeocodeById(geo)
         setNearbyById(near)
+        setPayloadsById(pld)
         setSmartScores(next)
+        // Drop any live predictions for rows that no longer exist (e.g. user
+        // deleted a listing). Keep predictions for rows still present.
+        setLivePredictionsById((prev) => {
+          const validIds = new Set(rows.map((r) => r.id))
+          const filtered = {}
+          for (const [id, v] of Object.entries(prev)) {
+            if (validIds.has(id) || validIds.has(Number(id))) filtered[id] = v
+          }
+          return filtered
+        })
       } catch {
         if (!cancelled) {
           setSmartScores({})
           setSnapshotsById({})
           setGeocodeById({})
           setNearbyById({})
+          setPayloadsById({})
         }
       } finally {
         if (!cancelled) setWishlistDetailsSettled(true)
@@ -578,6 +676,46 @@ export default function ShortlistView() {
   }, [rows, u])
 
   const snapshotsReady = snapshotsReadyForPersonas(rows, snapshotsById)
+
+  // Rows enriched with the latest live predictions (if any). Smart scores still
+  // run off the original `rows` (saved snapshots) — they're an indicator of
+  // listing quality at save time, not something we want to fluctuate per refresh.
+  const mergedRows = useMemo(() => {
+    if (!Object.keys(livePredictionsById).length) return rows
+    return rows.map((r) => {
+      const live = livePredictionsById[r.id]
+      return live ? { ...r, ...live } : r
+    })
+  }, [rows, livePredictionsById])
+
+  const handleGlobalRefresh = useCallback(async () => {
+    if (!rows.length) return
+    setGlobalRefreshState('loading')
+    setGlobalRefreshProgress({ done: 0, total: rows.length })
+    const updates = {}
+    let done = 0
+    await Promise.allSettled(
+      rows.map(async (r) => {
+        const payload = payloadsById[r.id]
+        if (!payload) return
+        try {
+          const fresh = await predictPrice(payload)
+          updates[r.id] = {
+            predicted_price: fresh.predicted_price,
+            confidence_low: fresh.confidence_low,
+            confidence_high: fresh.confidence_high,
+          }
+        } catch {
+          // skip — keep saved snapshot for this row
+        }
+        done += 1
+        setGlobalRefreshProgress({ done, total: rows.length })
+      })
+    )
+    setLivePredictionsById((prev) => ({ ...prev, ...updates }))
+    setLastGlobalRefreshAt(new Date())
+    setGlobalRefreshState(Object.keys(updates).length > 0 ? 'idle' : 'error')
+  }, [rows, payloadsById])
 
   useEffect(() => {
     if (!wishlistDetailsSettled || rows.length === 0) return
@@ -602,12 +740,12 @@ export default function ShortlistView() {
 
   const displayRows = useMemo(() => {
     if (nlSortedIds != null) {
-      const byId = new Map(rows.map((r) => [r.id, r]))
+      const byId = new Map(mergedRows.map((r) => [r.id, r]))
       return nlSortedIds.map((id) => byId.get(id)).filter(Boolean)
     }
-    const baseOrder = new Map(rows.map((r, i) => [r.id, i]))
+    const baseOrder = new Map(mergedRows.map((r, i) => [r.id, i]))
     if (activePersona && snapshotsReady) {
-      return [...rows]
+      return [...mergedRows]
         .map((row) => ({ row, score: getPersonaScore(activePersona, snapshotsById[row.id]) }))
         .sort((a, b) => {
           const d = b.score - a.score
@@ -618,7 +756,7 @@ export default function ShortlistView() {
     }
 
     const mul = sortDir === 'asc' ? 1 : -1
-    const sorted = [...rows]
+    const sorted = [...mergedRows]
     sorted.sort((a, b) => {
       switch (sortColumn) {
         case 'address': {
@@ -647,7 +785,7 @@ export default function ShortlistView() {
     })
     return sorted
   }, [
-    rows,
+    mergedRows,
     nlSortedIds,
     activePersona,
     snapshotsReady,
@@ -658,8 +796,8 @@ export default function ShortlistView() {
   ])
 
   const mapRowsForView = useMemo(
-    () => (nlSortedIds != null ? displayRows : rows),
-    [nlSortedIds, displayRows, rows]
+    () => (nlSortedIds != null ? displayRows : mergedRows),
+    [nlSortedIds, displayRows, mergedRows]
   )
 
   const toggleMapRow = useCallback(
@@ -894,7 +1032,47 @@ export default function ShortlistView() {
         </Card>
       ) : (
         <>
-          <header className="flex flex-wrap items-start justify-end gap-4">
+          <header className="flex flex-wrap items-center justify-between gap-4">
+            {(() => {
+              const refreshing = globalRefreshState === 'loading'
+              const refreshedCount = Object.keys(livePredictionsById).length
+              const hasPayloads = Object.keys(payloadsById).length > 0
+              return (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleGlobalRefresh}
+                    disabled={refreshing || !hasPayloads}
+                    aria-label="Refresh AI estimates for every shortlisted listing"
+                  >
+                    <RefreshCw
+                      className={`mr-1.5 h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`}
+                      aria-hidden
+                    />
+                    {refreshing
+                      ? `Refreshing ${globalRefreshProgress.done}/${globalRefreshProgress.total}…`
+                      : 'Refresh AI estimates'}
+                  </Button>
+                  <div className="text-[11px] text-muted-foreground">
+                    {refreshing ? (
+                      <span>Re-running /api/predict for every row…</span>
+                    ) : globalRefreshState === 'error' ? (
+                      <span className="text-destructive">All predictions failed — saved snapshots still shown.</span>
+                    ) : refreshedCount > 0 && lastGlobalRefreshAt ? (
+                      <span>
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 align-middle" aria-hidden />
+                        {' '}Live · {refreshedCount} of {rows.length} updated · refreshed{' '}
+                        {formatRelativeTime(lastGlobalRefreshAt.toISOString())}
+                      </span>
+                    ) : (
+                      <span>Showing saved snapshots. Click to re-run the model on every row.</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
             <div
               className="inline-flex rounded-full bg-muted p-1"
               role="tablist"
