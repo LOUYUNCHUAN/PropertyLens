@@ -3,6 +3,9 @@ predict.py — /api/predict, /api/explain/shap, /api/explain/lime
 Uses PropertyLens hybrid cluster bundle under data/artifacts/.
 """
 
+import re
+
+import requests
 from fastapi import APIRouter
 import numpy as np
 
@@ -103,6 +106,82 @@ def _legacy_ir_to_hybrid_vector(req: PredictRequest) -> np.ndarray:
     return np.array([feat.get(c, 0.0) for c in state.feature_cols], dtype=np.float64)
 
 
+_ONEMAP_SEARCH_URL = "https://www.onemap.gov.sg/api/common/elastic/search"
+_BIG_MALL_RE = re.compile(r"MEGA|HUB|CITY|JUNCTION|POINT|PLAZA|CENTRE", re.I)
+
+
+def _strict_geocode(block: str, street_name: str) -> tuple[float, float] | None:
+    """Strict OneMap lookup. Single query, exact BLK_NO match, 4s timeout."""
+    try:
+        resp = requests.get(
+            _ONEMAP_SEARCH_URL,
+            params={
+                "searchVal": f"{block} {street_name}",
+                "returnGeom": "Y",
+                "getAddrDetails": "Y",
+                "pageNum": 1,
+            },
+            timeout=4,
+        )
+        for r in resp.json().get("results", []):
+            if str(r.get("BLK_NO", "")).strip().upper() == str(block).strip().upper():
+                lat = float(r.get("LATITUDE", 0))
+                lng = float(r.get("LONGITUDE", 0))
+                if lat and lng:
+                    return lat, lng
+    except Exception:
+        return None
+    return None
+
+
+def _live_geo_features(lat: float, lng: float) -> dict[str, float]:
+    """Recompute geo columns from the live amenity CSVs at (lat, lng).
+    Only used as a strict fallback when the feature table didn't match.
+    """
+    from backend.location import compute_nearby, nearest_highway_dist_m, _load_amenities
+
+    _load_amenities()
+    nearby = compute_nearby(lat, lng, radius_m=15000.0)
+    feats: dict[str, float] = {}
+
+    mrt_items = nearby.get("mrt", [])
+    if mrt_items:
+        feats["dist_to_mrt_m"] = float(mrt_items[0]["dist_m"])
+
+    hawker_items = nearby.get("hawker", [])
+    if hawker_items:
+        feats["dist_to_foodcourt_m"] = float(hawker_items[0]["dist_m"])
+
+    mall_items = nearby.get("mall", [])
+    if mall_items:
+        feats["dist_to_nearest_mall_m"] = float(mall_items[0]["dist_m"])
+
+    malls_3km = [m for m in mall_items if m["dist_m"] <= 3000]
+    feats["mall_count_3km"] = float(len(malls_3km))
+    if malls_3km:
+        feats["mall_weighted_access_3km"] = sum(
+            (1.5 if _BIG_MALL_RE.search(m.get("name", "")) else 1.0)
+            / (max(m["dist_m"] / 1000.0, 0.05) + 0.25)
+            for m in malls_3km
+        )
+    else:
+        feats["mall_weighted_access_3km"] = 0.0
+
+    school_items = nearby.get("school", [])
+    if school_items:
+        feats["dist_to_nearest_school_m"] = float(school_items[0]["dist_m"])
+
+    schools_1km = [s for s in school_items if s["dist_m"] <= 1000]
+    feats["school_count_1km"] = float(len(schools_1km))
+    feats["primary_school_count_1km"] = float(len(schools_1km))
+
+    hw_dist = nearest_highway_dist_m(lat, lng)
+    if hw_dist is not None:
+        feats["dist_to_highway_m"] = float(hw_dist)
+
+    return feats
+
+
 def flat_to_feature_vector_with_debug(req: PredictRequest) -> tuple[np.ndarray, HybridPredictionDebug, dict]:
     """Returns (feature_vector, debug_info, features_dict)."""
     from backend.hybrid_inference import (
@@ -131,15 +210,46 @@ def flat_to_feature_vector_with_debug(req: PredictRequest) -> tuple[np.ndarray, 
             sale_month,
         )
         X = built["vector"].ravel()
+        feat_dict = built["features_dict"]
         note = (built["imputation_note"] or "").strip()
+
+        # Strict fallback — only on a clean lookup miss with all address fields
+        # present. When the table matches, those values are the canonical
+        # training-time numbers and must NOT be overridden.
+        fallback_note: str | None = None
+        if not built["lookup_matched"]:
+            block_s = str(req.block or "").strip()
+            street_s = str(req.street_name or "").strip()
+            town_s = str(req.town or "").strip()
+            if block_s and street_s and town_s:
+                coords = _strict_geocode(block_s, street_s)
+                if coords is not None:
+                    lat, lng = coords
+                    live_geo = _live_geo_features(lat, lng)
+                    col_index = {c: i for i, c in enumerate(state.feature_cols)}
+                    for fname, val in live_geo.items():
+                        if fname in col_index:
+                            X[col_index[fname]] = val
+                            feat_dict[fname] = val
+                    fallback_note = (
+                        f"Lookup miss — refreshed {len(live_geo)} geo features "
+                        f"from live OneMap ({lat:.5f},{lng:.5f})."
+                    )
+                else:
+                    fallback_note = (
+                        "Lookup miss — strict OneMap geocode failed; using "
+                        "town-median imputation."
+                    )
+
+        combined_note = " ".join(filter(None, [note, fallback_note])) or None
         dbg = HybridPredictionDebug(
             lookup_matched=built["lookup_matched"],
             matched_address_key=built["matched_address_key"],
-            imputation_note=note if note else None,
-            cluster_id=cluster_label_for_X(built["vector"], state.hybrid_bundle),
+            imputation_note=combined_note,
+            cluster_id=cluster_label_for_X(X.reshape(1, -1), state.hybrid_bundle),
             feature_table_csv=ft_path,
         )
-        return X, dbg, built["features_dict"]
+        return X, dbg, feat_dict
 
     X = _legacy_ir_to_hybrid_vector(req)
     feat = {c: float(X[i]) for i, c in enumerate(state.feature_cols)}
