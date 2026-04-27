@@ -6,7 +6,8 @@
   "permissions": ["activeTab", "storage"],
   "host_permissions": [
     "https://www.propertyguru.com.sg/*",
-    "http://localhost:8000/*"
+    "http://localhost:8000/*",
+    "http://localhost:5173/*"
   ],
   "action": {
     "default_popup": "popup.html"
@@ -20,6 +21,11 @@
       ],
       "js": ["content.js"],
       "css": ["styles.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://localhost:5173/*"],
+      "js": ["frontend_bridge.js"],
       "run_at": "document_idle"
     }
   ],
