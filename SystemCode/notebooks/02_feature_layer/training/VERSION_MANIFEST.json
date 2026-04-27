@@ -1,0 +1,21 @@
+{
+  "version": "20260406",
+  "timestamp": "2026-04-06T05:42:44.430503+00:00",
+  "files": [
+    "VERSION_MANIFEST.json",
+    "feature_metadata_20260403.json",
+    "feature_metadata_20260406.json",
+    "hdb_feature_table_20260403.csv",
+    "hdb_feature_table_20260406.csv",
+    "hdb_feature_test_20260403.csv",
+    "hdb_feature_test_20260406.csv",
+    "hdb_feature_train_20260403.csv",
+    "hdb_feature_train_20260406.csv"
+  ],
+  "duplicates_removed": 2305,
+  "total_rows": 260699,
+  "train_rows": 178589,
+  "test_rows": 82110,
+  "split_year": 2023,
+  "old_versions_removed": 0
+}

@@ -1,0 +1,23 @@
+{
+  "version": "20260412",
+  "layer": "05_photo_layer",
+  "description": "EfficientNet-B0 furnishing condition scorer trained on LSUN bedrooms with LAION aesthetic scores",
+  "date_created": "2026-04-12",
+  "contents": {
+    "data/ava_indoor_labels.csv": "1000-row scored image pool (LSUN bedrooms, LAION 0-10 scores)",
+    "data/photo_labels_train.csv": "800-row training split",
+    "data/photo_labels_val.csv": "200-row validation split",
+    "data/photo_split_meta_20260412.json": "Split metadata",
+    "data/indoor_images/": "885 JPEG bedroom photos (000000.jpg - 000999.jpg, some gaps)",
+    "artifacts/condition_model_20260412.pth": "EfficientNet-B0 weights, val_mae=0.483 on 0-10 scale",
+    "artifacts/condition_model_meta_20260412.json": "Training history and hyperparameters",
+    "artifacts/training_curves_20260412.png": "Loss and MAE training curves"
+  },
+  "model": {
+    "architecture": "efficientnet_b0",
+    "val_mae": 0.483,
+    "score_scale": "0-10",
+    "image_source": "pcuenq/lsun-bedrooms",
+    "scorer": "LAION sac+logos+ava1-l14-linearMSE (CLIP ViT-L/14)"
+  }
+}
