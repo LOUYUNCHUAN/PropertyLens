@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,7 @@ from backend.auth_deps import resolve_effective_username
 from backend.db import get_db
 from backend.location import compute_nearby, enrich_map_snapshot_json, geocode, nearest_highway_dist_m
 from backend.models import CBRRequest, PredictRequest, SHAPRequest
+from backend.shortlist_graph import delete_shortlist_item, project_shortlist_item_by_sql_id
 from backend.shortlist_plan_apply import apply_plan, merge_nl_constraint_overrides
 from backend.shortlist_search import (
     NLSearchRequest,
@@ -95,6 +96,7 @@ def _display_label_for(req: PredictRequest, override: Optional[str]) -> str:
 @router.post("/items", response_model=WishlistDetail)
 def create_wishlist_item(
     req: WishlistCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     authorization: Annotated[Optional[str], Header()] = None,
 ):
@@ -154,6 +156,9 @@ def create_wishlist_item(
     db.add(row)
     db.commit()
     db.refresh(row)
+    # Best-effort projection into Neo4j after the SQL commit. Runs after
+    # response is sent; failures are swallowed inside project_shortlist_item.
+    background_tasks.add_task(project_shortlist_item_by_sql_id, row.id)
     return WishlistDetail.model_validate(_row_to_detail_dict(row))
 
 
@@ -256,6 +261,7 @@ def nl_search_shortlist(
 @router.delete("/items/{item_id}")
 def delete_wishlist_item(
     item_id: int,
+    background_tasks: BackgroundTasks,
     username: str = Query(..., min_length=1, max_length=128),
     db: Session = Depends(get_db),
     authorization: Annotated[Optional[str], Header()] = None,
@@ -273,4 +279,5 @@ def delete_wishlist_item(
         raise HTTPException(status_code=404, detail="Not found")
     db.delete(row)
     db.commit()
+    background_tasks.add_task(delete_shortlist_item, item_id)
     return {"ok": True}
