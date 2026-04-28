@@ -93,6 +93,25 @@ def adjustment_pct_for_score(score: float) -> float:
     return float(np.clip((score - 5.0) * 2.0, -10.0, 10.0))
 
 
+# Calibration: the AVA-derived training labels (ava_indoor_labels.csv) span
+# only ~3.0–5.15 (mean ~4.27, std ~0.36) despite the nominal "0–10" naming.
+# Scores from the model therefore live in the same compressed range, and
+# downstream `(score - 5) * 2` adjustments never reach Good/Excellent tiers.
+# Stretch the model's actual output range onto the displayed 0–10 scale so the
+# tier ladder is usable. This is a presentation calibration — it does not
+# improve the model's discriminative power, it just stops the bottom-half UI
+# clamping. Replace with a domain-labelled retrain (Option 2) for a real fix.
+_CALIBRATION_RAW_MIN = 3.0
+_CALIBRATION_RAW_MAX = 5.15
+
+
+def calibrate_raw_score(raw: float) -> float:
+    """Map a raw model output (~3.0–5.15) onto the displayed 0–10 scale."""
+    span = _CALIBRATION_RAW_MAX - _CALIBRATION_RAW_MIN
+    stretched = (float(raw) - _CALIBRATION_RAW_MIN) / span * 10.0
+    return float(np.clip(stretched, 0.0, 10.0))
+
+
 # ── Model loading ──────────────────────────────────────────────────────────────
 
 def load_condition_model(model_path: str | Path | None = None):
@@ -201,11 +220,17 @@ def predict_condition_score(
 
     tensor = preprocess_image(image_path)
     with torch.no_grad():
-        raw = model(tensor).item()
-    score = float(np.clip(raw, 0.0, 10.0))
+        raw = float(model(tensor).item())
+    score = calibrate_raw_score(raw)
     return {
         "score": score,
         "tier_label": tier_label_for_score(score),
+        "raw_model_output": raw,
+        "calibration": {
+            "raw_min": _CALIBRATION_RAW_MIN,
+            "raw_max": _CALIBRATION_RAW_MAX,
+            "note": "Score linearly stretched from training-distribution range to 0–10.",
+        },
     }
 
 
