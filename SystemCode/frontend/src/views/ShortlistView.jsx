@@ -1420,22 +1420,22 @@ export default function ShortlistView() {
                                     })()}
                                   </div>
                                   {sm.badge.color === 'green' ? (
-                                    <div className="inline-flex h-7 items-center gap-1.5 rounded-full bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:ring-emerald-900">
+                                    <div className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:ring-emerald-900">
                                       <span className="h-2 w-2 rounded-full bg-emerald-500" />
                                       {badgePrimaryLabel(sm.badge.label)} · {sm.complete === false ? '~' : ''}{sm.score}
                                     </div>
                                   ) : sm.badge.color === 'amber' ? (
-                                    <div className="inline-flex h-7 items-center gap-1.5 rounded-full bg-amber-50 px-3 text-sm font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900">
+                                    <div className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full bg-amber-50 px-3 text-sm font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900">
                                       <span className="h-2 w-2 rounded-full bg-amber-400" />
                                       {badgePrimaryLabel(sm.badge.label)} · {sm.complete === false ? '~' : ''}{sm.score}
                                     </div>
                                   ) : sm.badge.color === 'slate' ? (
-                                    <div className="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted px-3 text-sm font-semibold text-foreground ring-1 ring-border">
+                                    <div className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full bg-muted px-3 text-sm font-semibold text-foreground ring-1 ring-border">
                                       <span className="h-2 w-2 rounded-full bg-muted-foreground" />
                                       {badgePrimaryLabel(sm.badge.label)} · {sm.complete === false ? '~' : ''}{sm.score}
                                     </div>
                                   ) : (
-                                    <div className="inline-flex h-7 items-center gap-1.5 rounded-full bg-red-50 px-3 text-sm font-semibold text-red-700 ring-1 ring-red-200 dark:bg-red-950/40 dark:text-red-200 dark:ring-red-900">
+                                    <div className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full bg-red-50 px-3 text-sm font-semibold text-red-700 ring-1 ring-red-200 dark:bg-red-950/40 dark:text-red-200 dark:ring-red-900">
                                       <span className="h-2 w-2 rounded-full bg-red-400" />
                                       {badgePrimaryLabel(sm.badge.label)} · {sm.complete === false ? '~' : ''}{sm.score}
                                     </div>

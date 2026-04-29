@@ -41,11 +41,13 @@ function listingNumberIcon(n, override = null) {
   })
 }
 
-function amenityMatchesCategory(cat, activeCategory) {
-  if (activeCategory === 'all') return true
-  if (activeCategory === 'mrt') return cat === 'mrt' || cat === 'lrt'
-  return cat === activeCategory
+function amenityMatchesEnabled(cat, enabled) {
+  // MRT pill governs both MRT and LRT pins.
+  if (cat === 'mrt' || cat === 'lrt') return enabled.has('mrt')
+  return enabled.has(cat)
 }
+
+const TOGGLEABLE_CATEGORIES = ['mrt', 'school', 'hawker', 'mall', 'highway']
 
 /**
  * @param {object} props
@@ -77,10 +79,22 @@ export default function ShortlistMapView({
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const layersRef = useRef([])
-  const [activeCategory, setActiveCategory] = useState('all')
-  // Toggle to hide highway polylines independently of category filter.
-  // Defaults ON; users can disable when the lines distract from listing pins.
-  const [showHighways, setShowHighways] = useState(true)
+  // Independent on/off for each amenity layer. All on by default — matches the
+  // previous behaviour where "All" was the default radio selection.
+  const [enabledCategories, setEnabledCategories] = useState(
+    () => new Set(TOGGLEABLE_CATEGORIES)
+  )
+  const toggleCategory = useCallback((key) => {
+    setEnabledCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+  const setAllCategories = useCallback((on) => {
+    setEnabledCategories(new Set(on ? TOGGLEABLE_CATEGORIES : []))
+  }, [])
 
   const geocodedOrder = useMemo(
     () => rows.filter((r) => geocodeById[r.id]?.found),
@@ -97,9 +111,28 @@ export default function ShortlistMapView({
 
   const visibleRows = useMemo(
     () =>
-      rows.filter(
-        (r) => selectedListingIds.has(r.id) && geocodeById[r.id]?.found
-      ),
+      rows.filter((r) => {
+        if (!selectedListingIds.has(r.id)) return false
+        const g = geocodeById[r.id]
+        if (!g?.found) return false
+        // Defensive: drop entries with non-finite coords so we don't plant a
+        // marker at (0, 0) and accidentally pull fitBounds off Singapore.
+        return Number.isFinite(g.lat) && Number.isFinite(g.lng)
+      }),
+    [rows, selectedListingIds, geocodeById]
+  )
+
+  // Selected rows whose geocode is missing or invalid. We surface these as a
+  // small inline notice so the user can see *why* fewer pins than selections
+  // appear on the map (otherwise it just looks broken).
+  const missingSelectedRows = useMemo(
+    () =>
+      rows.filter((r) => {
+        if (!selectedListingIds.has(r.id)) return false
+        const g = geocodeById[r.id]
+        if (!g?.found) return true
+        return !(Number.isFinite(g.lat) && Number.isFinite(g.lng))
+      }),
     [rows, selectedListingIds, geocodeById]
   )
 
@@ -244,11 +277,7 @@ export default function ShortlistMapView({
       layers.push(m)
     }
 
-    if (
-      showHighways &&
-      mergedHighwaySegments.length > 0 &&
-      (activeCategory === 'all' || activeCategory === 'highway')
-    ) {
+    if (enabledCategories.has('highway') && mergedHighwaySegments.length > 0) {
       mergedHighwaySegments.forEach((seg) => {
         const latlngs = (seg.latlngs || []).map(([la, ln]) => [la, ln])
         if (latlngs.length < 2) return
@@ -277,10 +306,12 @@ export default function ShortlistMapView({
         } catch {
           /* ignore */
         }
-        // Include highway endpoints in the fit-bounds so we don't zoom in so
-        // tight on the picked listings that the highway lines are clipped off
-        // the map.
-        latlngs.forEach((p) => bounds.push(p))
+        // Highway polylines do NOT contribute to fit-bounds. A single segment
+        // (PIE/KPE/TPE) can span 20–40 km, so adding every vertex blows the
+        // bounds out to the whole island and the listing pins end up squeezed
+        // into a far corner of the view. Better to fit tight on listings;
+        // highway tails that fall outside the viewport will simply clip,
+        // which is fine — the user can pan if they want to follow them.
         line.bindTooltip(highwaySegmentTooltipHtml(seg), {
           sticky: true,
           className: 'amenity-tooltip'
@@ -292,7 +323,7 @@ export default function ShortlistMapView({
 
     mergedAmenities.forEach((entry) => {
       const { cat, item } = entry
-      if (!amenityMatchesCategory(cat, activeCategory)) return
+      if (!amenityMatchesEnabled(cat, enabledCategories)) return
       const mk = L.marker([item.lat, item.lng], {
         icon: makeAmenityIcon(mapStyleCategory(cat), false)
       }).addTo(map)
@@ -317,8 +348,7 @@ export default function ShortlistMapView({
     geocodeById,
     mergedAmenities,
     mergedHighwaySegments,
-    showHighways,
-    activeCategory,
+    enabledCategories,
     listingNumber,
     pinAppearanceById,
     radiusOverlayById,
@@ -329,37 +359,37 @@ export default function ShortlistMapView({
   return (
     <div className={`w-full space-y-3 ${fillHeight ? 'flex h-full flex-col' : ''}`}>
       <div
-        className="flex flex-wrap gap-1.5"
-        role="tablist"
-        aria-label="Amenity categories"
+        className="flex flex-wrap items-center gap-1.5"
+        role="group"
+        aria-label="Amenity layers"
       >
-        {MAP_AMENITY_CATEGORIES.map((cat) => {
+        {MAP_AMENITY_CATEGORIES.filter((cat) => cat.key !== 'all').map((cat) => {
           const count =
-            cat.key === 'all'
-              ? categoryCounts.all
-              : cat.key === 'mrt'
-                ? categoryCounts.mrt
-                : categoryCounts[cat.key] ?? 0
-          const isActive = activeCategory === cat.key
+            cat.key === 'mrt' ? categoryCounts.mrt : categoryCounts[cat.key] ?? 0
+          const isOn = enabledCategories.has(cat.key)
           return (
-            <button
+            <label
               key={cat.key}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setActiveCategory(cat.key)}
-              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[12px] font-medium transition-colors ${
-                isActive
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium transition-colors ${
+                isOn
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border bg-background text-muted-foreground hover:bg-muted/60'
               }`}
+              title={`Toggle ${cat.label} layer`}
             >
+              <input
+                type="checkbox"
+                checked={isOn}
+                onChange={() => toggleCategory(cat.key)}
+                className="h-3.5 w-3.5 cursor-pointer accent-primary"
+                aria-label={cat.label}
+              />
               <span aria-hidden>{cat.icon}</span>
               {cat.label}
               {count > 0 && (
                 <span
                   className={`rounded-full px-1.5 text-[10px] font-bold ${
-                    isActive
+                    isOn
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground'
                   }`}
@@ -367,24 +397,41 @@ export default function ShortlistMapView({
                   {count}
                 </span>
               )}
-            </button>
+            </label>
           )
         })}
 
-        <label
-          className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/60"
-          title="Toggle major-road overlays"
-        >
-          <input
-            type="checkbox"
-            checked={showHighways}
-            onChange={(e) => setShowHighways(e.target.checked)}
-            className="h-3.5 w-3.5 cursor-pointer accent-primary"
-          />
-          <span aria-hidden>🛣️</span>
-          Show highways
-        </label>
+        <div className="ml-auto inline-flex items-center gap-1 text-[11px]">
+          <button
+            type="button"
+            onClick={() => setAllCategories(true)}
+            className="rounded-md px-2 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            Show all
+          </button>
+          <span className="text-muted-foreground/40" aria-hidden>·</span>
+          <button
+            type="button"
+            onClick={() => setAllCategories(false)}
+            className="rounded-md px-2 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            Hide all
+          </button>
+        </div>
       </div>
+
+      {missingSelectedRows.length > 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-100">
+          <span className="font-semibold">
+            {missingSelectedRows.length} of {missingSelectedRows.length + visibleRows.length} selected listings not on the map:
+          </span>{' '}
+          {missingSelectedRows
+            .map((r) => r.display_label || r.address_short || `Listing #${r.id}`)
+            .join(', ')}
+          {'. '}
+          Open the listing and re-save with block + street so its address is geocoded.
+        </div>
+      )}
 
       <div
         className={`relative overflow-hidden rounded-xl border border-border ${
