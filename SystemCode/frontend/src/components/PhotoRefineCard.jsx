@@ -12,7 +12,7 @@ const TIER_COLORS = {
 
 const fmt = (n) => `$${Math.round(n).toLocaleString()}`
 
-export default function PhotoRefineCard({ basePrice, onResult }) {
+export default function PhotoRefineCard({ basePrice, onResult, initialFile = null }) {
   const [file, setFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(null)
   const [result, setResult] = useState(null)
@@ -25,6 +25,19 @@ export default function PhotoRefineCard({ basePrice, onResult }) {
       if (previewUrl) URL.revokeObjectURL(previewUrl)
     }
   }, [previewUrl])
+
+  // Auto-populate when an initialFile is handed in (extension scrape path).
+  // Treat re-emits with the same File reference as no-ops so we don't loop.
+  useEffect(() => {
+    if (!initialFile) return
+    if (file === initialFile) return
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setError(null)
+    setResult(null)
+    setFile(initialFile)
+    setPreviewUrl(URL.createObjectURL(initialFile))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile])
 
   const handleFile = (f) => {
     if (!f) return
@@ -87,7 +100,7 @@ export default function PhotoRefineCard({ basePrice, onResult }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '8px' }}>
         <span style={{ fontSize: 20 }} aria-hidden>📸</span>
         <div style={{ fontSize: 16, fontWeight: 700, color: '#065f46' }}>
-          Just renovated? Refine with a photo
+          Verify the quality of renovation and see if it changes the price
         </div>
       </div>
       <div style={{ fontSize: '13px', color: 'var(--ink-muted)', marginBottom: '16px' }}>

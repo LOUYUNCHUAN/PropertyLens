@@ -14,6 +14,7 @@ import {
 import { useAuth } from '../context/AuthContext.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import BuyerEstimateInsights from '../components/buyer/BuyerEstimateInsights.jsx'
+import PhotoRefineCard from '../components/PhotoRefineCard.jsx'
 import { TOWNS, getTownCoords } from '../constants/towns.js'
 import { Button } from '@/components/ui/button'
 import {
@@ -121,9 +122,128 @@ export default function BuyerView() {
   const [shortlistLoading, setShortlistLoading] = useState(false)
   const [shortlistMsg, setShortlistMsg] = useState(null)
   const [showResults, setShowResults] = useState(false)
+  // Image scraped by the PropertyGuru extension and relayed via
+  // chrome.storage.local + frontend_bridge. Null when there's no `?img_token=`
+  // on the URL or when retrieval fails.
+  const [scrapedListingFile, setScrapedListingFile] = useState(null)
+  const [scrapedListingImageUrl, setScrapedListingImageUrl] = useState(null)
+  const [scrapedListingError, setScrapedListingError] = useState(null)
+  const [photoAdjustment, setPhotoAdjustment] = useState(null)
   const [estimateKey, setEstimateKey] = useState(0)
   const [rulesPayload, setRulesPayload] = useState(null)
   const [formCollapsed, setFormCollapsed] = useState(false)
+
+  // Pull listing photos forwarded by the PropertyGuru extension. The extension
+  // stashes URLs under a token in chrome.storage.local, frontend_bridge.js
+  // listens for postMessage and replies with the URL list. We fetch only the
+  // first image (hero) as a Blob → File so PhotoRefineCard's multipart-upload
+  // path works unchanged. The other URLs in the stash are ignored for now.
+  //
+  // Robustness:
+  // - We retry the postMessage every 500ms (up to 8 attempts) so a slow
+  //   bridge content-script load doesn't drop the request.
+  // - All paths log to the console under [PropertyLens-Buyer] for debugging.
+  // - Any failure leaves the manual upload UX intact.
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get('img_token')
+    if (!token) return
+
+    const log = (...args) => {
+      try { console.log('[PropertyLens-Buyer]', ...args) } catch {}
+    }
+    log('img_token detected', token)
+
+    let cancelled = false
+    let retryTimer = null
+    let retries = 0
+    const MAX_RETRIES = 8
+    const RETRY_INTERVAL_MS = 500
+
+    const onMessage = async (event) => {
+      if (event.source !== window) return
+      const d = event.data
+      if (
+        !d ||
+        d.source !== 'propertylens-bridge' ||
+        d.type !== 'img-payload' ||
+        d.token !== token
+      ) {
+        return
+      }
+      // Got a reply for our token — stop retrying.
+      window.removeEventListener('message', onMessage)
+      if (retryTimer) window.clearInterval(retryTimer)
+      if (cancelled) return
+
+      log('bridge payload', { error: d.error, image_count: (d.images || []).length })
+
+      if (d.error) {
+        setScrapedListingError(`Image bridge: ${d.error}`)
+        return
+      }
+      const urls = Array.isArray(d.images) ? d.images : []
+      if (urls.length === 0) {
+        setScrapedListingError('No images forwarded from listing.')
+        return
+      }
+      const heroUrl = urls[0]
+      setScrapedListingImageUrl(heroUrl)
+      log('fetching hero', heroUrl)
+      try {
+        const resp = await fetch(heroUrl, { mode: 'cors', credentials: 'omit' })
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+        const blob = await resp.blob()
+        if (cancelled) return
+        const ext = (blob.type.split('/')[1] || 'jpg').replace(/[^a-z0-9]/gi, '')
+        const file = new File([blob], `listing.${ext}`, { type: blob.type || 'image/jpeg' })
+        log('hero loaded', { type: blob.type, size: blob.size })
+        setScrapedListingFile(file)
+        setScrapedListingError(null)
+      } catch (err) {
+        if (cancelled) return
+        log('hero fetch failed', err)
+        setScrapedListingError(
+          `Could not fetch listing photo (${err?.message || 'network error'}). ` +
+            'You can still upload one manually.'
+        )
+      }
+    }
+    window.addEventListener('message', onMessage)
+
+    const sendRequest = () => {
+      retries += 1
+      log('img-request attempt', retries)
+      window.postMessage(
+        { source: 'propertylens-page', type: 'img-request', token },
+        window.location.origin
+      )
+      if (retries >= MAX_RETRIES) {
+        if (retryTimer) window.clearInterval(retryTimer)
+        // Give the bridge ~250ms grace after the last attempt before declaring
+        // it absent — a payload could still be in flight.
+        window.setTimeout(() => {
+          if (cancelled) return
+          // If we got a payload in the meantime, onMessage already removed
+          // the listener and we won't reach this branch.
+          setScrapedListingError(
+            (prev) => prev ||
+              'Extension bridge did not respond — make sure the PropertyLens extension is installed and reloaded.'
+          )
+        }, 250)
+      }
+    }
+    sendRequest()
+    retryTimer = window.setInterval(() => {
+      if (retries >= MAX_RETRIES) return
+      sendRequest()
+    }, RETRY_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      if (retryTimer) window.clearInterval(retryTimer)
+      window.removeEventListener('message', onMessage)
+    }
+  }, [])
 
   const listingAsNumber = useMemo(() => {
     const raw = String(listingPrice ?? '').replace(/,/g, '').trim()
@@ -654,6 +774,30 @@ export default function BuyerView() {
                 mapSaleMonth={form.sale_month}
                 offerFocusToken={offerFocusToken}
               />
+              <PhotoRefineCard
+                basePrice={prediction?.predicted_price}
+                initialFile={scrapedListingFile}
+                onResult={setPhotoAdjustment}
+              />
+              {scrapedListingError && !scrapedListingFile && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-100">
+                  {scrapedListingError}
+                  {scrapedListingImageUrl && (
+                    <>
+                      {' '}
+                      <a
+                        href={scrapedListingImageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline"
+                      >
+                        View photo
+                      </a>
+                      {' '}and upload it manually above.
+                    </>
+                  )}
+                </div>
+              )}
             </>
           )}
         </>
