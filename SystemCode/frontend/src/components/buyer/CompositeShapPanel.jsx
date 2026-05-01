@@ -16,7 +16,7 @@ const fmtSgd = (n) =>
 // neutral.
 const signed = (n) => `${Number(n) >= 0 ? '+' : '−'}${fmtSgd(n)}`
 
-const TOP_N = 6 // how many drivers are visible by default
+const TOP_N = 5 // how many drivers are visible by default
 
 function featureMeta(feature) {
   return (
