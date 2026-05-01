@@ -10,7 +10,8 @@ import {
   validateListing,
   nlSearchShortlist,
   getCBR,
-  predictPrice
+  predictPrice,
+  geocodeAddress
 } from '../api/client.js'
 import {
   wishlistDetailToSnapshot,
@@ -561,6 +562,7 @@ export default function ShortlistView() {
   const [nlHighwayMinM, setNlHighwayMinM] = useState('')
   const [mapSelectedIds, setMapSelectedIds] = useState(() => new Set())
   const mapSelectionInitRef = useRef(false)
+  const geocodeAttemptedRef = useRef(new Set())
   const [wishlistDetailsSettled, setWishlistDetailsSettled] = useState(false)
   // Live AI predictions overlaid on top of saved snapshots — populated by the
   // global refresh button. Empty until the user explicitly asks for a refresh.
@@ -596,6 +598,7 @@ export default function ShortlistView() {
       setGeocodeById({})
       setNearbyById({})
       setPayloadsById({})
+      geocodeAttemptedRef.current = new Set()
       setLivePredictionsById({})
       setGlobalRefreshState('idle')
       setGlobalRefreshProgress({ done: 0, total: 0 })
@@ -674,6 +677,48 @@ export default function ShortlistView() {
       cancelled = true
     }
   }, [rows, u])
+
+  // Backfill geocode for listings whose saved snapshot is missing a pin —
+  // older wishlist items pre-date the auto-geocode-on-save flow, so without
+  // this they'd silently disappear from the Compare map.
+  useEffect(() => {
+    if (!rows.length) return
+    const missing = rows.filter((r) => {
+      if (geocodeById[r.id]?.found) return false
+      if (geocodeAttemptedRef.current.has(r.id)) return false
+      const p = payloadsById[r.id]
+      const block = String(p?.block || '').trim()
+      const street = String(p?.street_name || '').trim()
+      return block && street
+    })
+    if (!missing.length) return
+    let cancelled = false
+    ;(async () => {
+      const results = await Promise.allSettled(
+        missing.map(async (r) => {
+          const p = payloadsById[r.id]
+          geocodeAttemptedRef.current.add(r.id)
+          const geo = await geocodeAddress(`${p.block} ${p.street_name}`)
+          return [r.id, geo]
+        })
+      )
+      if (cancelled) return
+      const updates = {}
+      for (const res of results) {
+        if (res.status !== 'fulfilled') continue
+        const [id, geo] = res.value
+        if (geo && geo.found && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
+          updates[id] = geo
+        }
+      }
+      if (Object.keys(updates).length) {
+        setGeocodeById((prev) => ({ ...prev, ...updates }))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [rows, payloadsById, geocodeById])
 
   const snapshotsReady = snapshotsReadyForPersonas(rows, snapshotsById)
 
