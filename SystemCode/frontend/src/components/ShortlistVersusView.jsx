@@ -2,9 +2,6 @@
  * ShortlistVersusView — head-to-head comparison of up to 3 shortlisted flats.
  *
  * Design intent (after design review):
- *   • Apple-to-apple by default — first picked row is the "anchor"; the picker
- *     dims non-comparable chips (different flat type, or floor area outside
- *     ±20%). User can un-toggle either constraint to relax the filter.
  *   • Drop the synthetic Smart Score in favour of concrete neighbourhood facts
  *     pulled from /api/nearby (already deduped, with school tier attached
  *     server-side via location.py).
@@ -38,7 +35,6 @@ import ShortlistMapView from '@/components/ShortlistMapView.jsx'
 
 const MAX_PICKS = 3
 const PICKER_LIMIT = 8
-const SQM_TOLERANCE = 0.20
 
 // ── Slot palette (assigned by picked-position) ────────────────────────────
 const SLOT = [
@@ -177,36 +173,6 @@ const hawkerWithin = (nearby, r) => within(nearby?.hawker, r)
 const mallWithin = (nearby, r) => within(nearby?.mall, r)
 const hasTopTierSchoolWithin = (nearby, r) =>
   schoolsWithin(nearby, r).some((s) => String(s?.tier || '').toLowerCase() === 'high')
-
-// ── Sub-component: filter chip toggle ──────────────────────────────────────
-function FilterChip({ active, onClick, children, title }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition-colors',
-        active
-          ? 'border-emerald-600 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-          : 'border-border bg-card text-slate-600 hover:border-slate-300 hover:text-foreground dark:text-muted-foreground'
-      )}
-    >
-      <span
-        className={cn(
-          'inline-flex h-3 w-3 items-center justify-center rounded-sm border',
-          active
-            ? 'border-emerald-600 bg-emerald-600 text-white'
-            : 'border-slate-300 bg-card dark:border-muted'
-        )}
-        aria-hidden
-      >
-        {active ? '✓' : ''}
-      </span>
-      {children}
-    </button>
-  )
-}
 
 // ── Sub-component: picker chip ─────────────────────────────────────────────
 function PickerChip({ row, slot, position, onClick, dimmed }) {
@@ -401,10 +367,6 @@ export default function ShortlistVersusView({
     })
   }, [ranked, initialIds])
 
-  // Apple-to-apple filters
-  const [sameType, setSameType] = useState(true)
-  const [similarSqm, setSimilarSqm] = useState(true)
-
   const togglePick = (id) => {
     setSelectedIds((prev) => {
       if (prev.includes(id)) return prev.length > 1 ? prev.filter((x) => x !== id) : prev
@@ -417,10 +379,6 @@ export default function ShortlistVersusView({
     () => selectedIds.map((id) => ranked.find((r) => r.id === id)).filter(Boolean),
     [selectedIds, ranked]
   )
-  const anchor = selected[0] || null
-  const anchorSnap = anchor ? snapshotsById[anchor.id] : null
-  const anchorType = anchor ? flatTypeOf(anchor, anchorSnap) : null
-  const anchorSqm = anchor ? sqmOf(anchor, anchorSnap) : null
 
   const visibleInPicker = useMemo(() => {
     // Always include picked listings first (in slot order) so their numbered
@@ -431,23 +389,8 @@ export default function ShortlistVersusView({
     const remaining = ranked.filter((r) => !selectedIds.includes(r.id))
     const fillCount = Math.max(0, PICKER_LIMIT - selectedRows.length)
     const combined = [...selectedRows, ...remaining.slice(0, fillCount)]
-    return combined.map((r) => {
-      let dimmed = false
-      if (anchor && r.id !== anchor.id) {
-        const rSnap = snapshotsById[r.id]
-        if (sameType && anchorType && flatTypeOf(r, rSnap) !== anchorType) dimmed = true
-        if (similarSqm && anchorSqm) {
-          const a = sqmOf(r, rSnap)
-          if (a == null) {
-            dimmed = true
-          } else if (Math.abs(a - anchorSqm) / anchorSqm > SQM_TOLERANCE) {
-            dimmed = true
-          }
-        }
-      }
-      return { row: r, dimmed }
-    })
-  }, [ranked, selectedIds, snapshotsById, anchor, anchorType, anchorSqm, sameType, similarSqm])
+    return combined.map((r) => ({ row: r, dimmed: false }))
+  }, [ranked, selectedIds])
 
   // Pin appearance map for the embedded leaflet map. Slot 1/2/3 in the
   // picker → emerald/violet/orange pins on the map with matching numbered
@@ -461,14 +404,16 @@ export default function ShortlistVersusView({
     return out
   }, [selectedIds])
 
-  // Translucent 2 km radius circle around each picked pin, in the slot colour.
+  // Outline-only 2 km radius ring around each picked pin, in the slot colour.
   // The 2 km radius matches the "Schools / Malls within 2 km" panels above,
-  // so the user sees the actual area those counts cover.
+  // so the user sees the actual area those counts cover. Filled circles
+  // overlap into a single opaque blob when 2-3 listings are picked nearby —
+  // a ring keeps the basemap legible.
   const radiusOverlayById = useMemo(() => {
     const out = {}
     selectedIds.forEach((id, idx) => {
       const s = SLOT_HEX[idx]
-      if (s) out[id] = { radiusM: 2000, color: s.bg, fillOpacity: 0.18 }
+      if (s) out[id] = { radiusM: 2000, color: s.bg, fillOpacity: 0 }
     })
     return out
   }, [selectedIds])
@@ -510,31 +455,8 @@ export default function ShortlistVersusView({
         </div>
       </div>
 
-      {/* Filter row + picker */}
+      {/* Picker */}
       <div className="rounded-2xl border border-border bg-card p-4">
-        <div className="mb-2.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-muted-foreground">
-          <span className="font-semibold uppercase tracking-[0.08em]">Comparing only:</span>
-          <FilterChip
-            active={sameType}
-            onClick={() => setSameType((v) => !v)}
-            title="Restrict the picker to listings of the same flat type as your anchor"
-          >
-            Same flat type
-          </FilterChip>
-          <FilterChip
-            active={similarSqm}
-            onClick={() => setSimilarSqm((v) => !v)}
-            title={`Restrict the picker to listings within ±${Math.round(SQM_TOLERANCE * 100)}% floor area of your anchor`}
-          >
-            Floor area ±{Math.round(SQM_TOLERANCE * 100)}%
-          </FilterChip>
-          {anchor && (
-            <span className="ml-auto truncate text-[11px] text-slate-500 dark:text-muted-foreground">
-              anchor: <strong className="text-foreground">{flatTypeOf(anchor)}</strong>
-              {anchorSqm ? <> · <strong className="text-foreground">{Math.round(anchorSqm)} sqm</strong></> : null}
-            </span>
-          )}
-        </div>
         <div className="flex flex-wrap gap-2">
           {visibleInPicker.map(({ row, dimmed }) => {
             const slot = slotFor(row.id, selectedIds)

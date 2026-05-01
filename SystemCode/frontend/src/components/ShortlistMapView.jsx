@@ -245,8 +245,9 @@ export default function ShortlistMapView({
           color: overlay.color || '#4a7c6f',
           fillColor: overlay.color || '#4a7c6f',
           fillOpacity: overlay.fillOpacity ?? 0.2,
-          weight: 1.25,
-          opacity: 0.55,
+          weight: 2,
+          opacity: 0.85,
+          dashArray: '6 4',
           interactive: false
         }).addTo(map)
         layers.push(c)
