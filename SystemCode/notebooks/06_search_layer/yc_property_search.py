@@ -853,7 +853,7 @@ class PropertyKnowledgeBase:
             candidates = sorted(artifact_dir.glob("famous_school_distances_*.parquet"))
             distances_path = candidates[-1] if candidates else None
 
-        print(f"Connecting to Neo4j: {uri}")
+        print("Connecting to Neo4j...")
         driver = GraphDatabase.driver(uri, auth=(username, password))
 
         try:

@@ -41,12 +41,12 @@ results = kb.search(weights={"score_famous_school": 10}, top_k=10)
 (:Property)  ─[:NEAR_FAMOUS_SCHOOL {dist}]─────►  (:FamousSchool)  ← within 2 km
 ```
 
-**Credentials** — stored in `.env` at repo root:
+**Credentials** — stored in `.env` at repo root (do not commit real values):
 ```
-NEO4J_URI=neo4j+s://975e5751.databases.neo4j.io
-NEO4J_USERNAME=975e5751
-NEO4J_PASSWORD=...
-NEO4J_DATABASE=975e5751
+NEO4J_URI=neo4j+s://<instance-id>.databases.neo4j.io
+NEO4J_USERNAME=<instance-id>
+NEO4J_PASSWORD=<rotated-password>
+NEO4J_DATABASE=<instance-id>
 ```
 
 ---
