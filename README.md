@@ -53,7 +53,7 @@ Demo login: **`user`** / **`1234`** at <http://localhost:5173>.
 
 `Refer to project report at Github Folder: ProjectReport`
 
-Final group report PDF and individual reflections will be added to `ProjectReport/IRS-PM-2026-03-29-GRP-TransparentAI-Proposal.pdf` on submission day.
+The final group report PDF is available at [`ProjectReport/IRS-PM-2026-03-29-GRP-TransparentAI-Proposal.pdf`](ProjectReport/IRS-PM-2026-03-29-GRP-TransparentAI-Proposal.pdf).
 
 ---
 
