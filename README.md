@@ -28,9 +28,9 @@ This report documents the business case, market positioning, system design, impl
 
 ## SECTION 4 : VIDEO OF SYSTEM MODELLING & USE CASE DEMO
 
-**Promotional video:** `[Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_Promotion.mp4](Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_Promotion.mp4)`
+**Promotional video:** [Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_Promotion.mp4](Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_Promotion.mp4)
 
-**Technical walkthrough video:** `[Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_System.mov](Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_System.mov)`
+**Technical walkthrough video:** [Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_System.mov](Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_System.mov)
 
 ---
 
@@ -38,11 +38,11 @@ This report documents the business case, market positioning, system design, impl
 
 `Refer to appendix <Installation & User Guide> in project report at Github Folder: ProjectReport`
 
-A complete, step-by-step setup guide for a fresh clone — including Hugging Face artifact download, Neo4j seeding, Ollama setup, and starting backend + frontend on the correct ports for the Chrome extension — is in `[SystemCode/HOW_TO_RUN.md](SystemCode/HOW_TO_RUN.md)`.
+A complete, step-by-step setup guide for a fresh clone — including Hugging Face artifact download, Neo4j seeding, Ollama setup, and starting backend + frontend on the correct ports for the Chrome extension — is in [SystemCode/HOW_TO_RUN.md](SystemCode/HOW_TO_RUN.md).
 
-Demo login: `**user`** / `**1234**` at [http://localhost:5173](http://localhost:5173).
+Demo login: **user** / **1234** at [http://localhost:5173](http://localhost:5173).
 
-> See also: `[SystemCode/HOW_TO_RUN.md](SystemCode/HOW_TO_RUN.md)` — full end-to-end run instructions (prerequisites, `.env` setup, artifact download, Neo4j + SQLite seeding, Ollama, backend + frontend startup, Chrome extension install, and troubleshooting).
+> See also: [SystemCode/HOW_TO_RUN.md](SystemCode/HOW_TO_RUN.md) — full end-to-end run instructions (prerequisites, `.env` setup, artifact download, Neo4j + SQLite seeding, Ollama, backend + frontend startup, Chrome extension install, and troubleshooting).
 
 ---
 
@@ -50,7 +50,7 @@ Demo login: `**user`** / `**1234**` at [http://localhost:5173](http://localhost:
 
 `Refer to project report at Github Folder: ProjectReport`
 
-The final group report PDF is available at `[ProjectReport/IRS-PM-2026-03-29-GRP-TransparentAI-Proposal.pdf](ProjectReport/IRS-PM-2026-03-29-GRP-TransparentAI-Proposal.pdf)`.
+The final group report PDF is available at [ProjectReport/IRS-PM-2026-03-29-GRP-TransparentAI-Proposal.pdf](ProjectReport/IRS-PM-2026-03-29-GRP-TransparentAI-Proposal.pdf).
 
 ---
 
@@ -58,6 +58,6 @@ The final group report PDF is available at `[ProjectReport/IRS-PM-2026-03-29-GRP
 
 `Refer to Github Folder: Miscellaneous`
 
-- `**Miscellaneous/images/**` — screenshots of the system used in the report and slides.
+- **Miscellaneous/images/** — screenshots of the system used in the report and slides.
 
 **This [Intelligent Reasoning Systems (IRS)](https://www.iss.nus.edu.sg/stackable-certificate-programmes/intelligent-systems) Practice Module is part of the Graduate Certificate offered by [NUS-ISS](https://www.iss.nus.edu.sg).**

@@ -90,6 +90,14 @@ SystemCode/frontend/package-lock.json
 # PPT-agent reference doc (regenerated as needed, not part of the submission)
 /details.md
 
+# ── Submission deliverables (PDFs, videos) — not synced via git ────
+# Folder structure is preserved via .gitkeep; the binary contents are
+# uploaded out-of-band on submission day.
+ProjectReport/*
+!ProjectReport/.gitkeep
+Video/*
+!Video/.gitkeep
+
 # Local rollback snapshots of artifact bundles (each contains the 270MB joblib)
 **/artifacts.backup-*/
 */.env.codex-defaults
