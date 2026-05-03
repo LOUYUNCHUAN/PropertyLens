@@ -1,6 +1,8 @@
 ## SECTION 1 : PROJECT TITLE
 
-
+<p align="center">
+  <img src="Miscellaneous/images/banner.png" alt="PropertyLens — IRS Practice Module · Group 15 (TransparentAI) · Kumar Bhuvesh (A0243823H), Lou Yunchuan (A0340534M), Chi Thra Rekha (A0103372U)" width="100%" />
+</p>
 
 ## PropertyLens — Explainable HDB Resale Price Prediction
 
