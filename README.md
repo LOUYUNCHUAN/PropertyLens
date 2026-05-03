@@ -29,9 +29,9 @@ This report documents the business case, market positioning, system design, impl
 
 ## SECTION 4 : VIDEO OF SYSTEM MODELLING & USE CASE DEMO
 
-**System modelling video:** see [`Video/`](Video/) folder.
+**Promotional video:** [`Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_Promotion.mp4`](Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_Promotion.mp4)
 
-**Use case demo video:** see [`Video/`](Video/) folder.
+**Technical walkthrough video:** [`Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_System.mov`](Video/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_System.mov)
 
 Note: It is not mandatory for every project member to appear in the video presentation; presentation by one project member is acceptable.
 
@@ -53,7 +53,7 @@ Demo login: **`user`** / **`1234`** at <http://localhost:5173>.
 
 `Refer to project report at Github Folder: ProjectReport`
 
-Final group report PDF and individual reflections will be added to `ProjectReport/` on submission day.
+Final group report PDF and individual reflections will be added to `ProjectReport/IRS-PM-2026-03-29-GRP-TransparentAI-Proposal.pdf` on submission day.
 
 ---
 
