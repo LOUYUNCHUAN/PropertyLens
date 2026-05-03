@@ -50,7 +50,7 @@ Demo login: **user** / **1234** at [http://localhost:5173](http://localhost:5173
 
 `Refer to project report at Github Folder: ProjectReport`
 
-The final group report PDF is available at [ProjectReport/IRS-PM-2026-05-03-AIS08PT-GRP15-TranspanrentAI_PropertyLens-Group-Report.pdf](ProjectReport/IRS-PM-2026-05-03-AIS08PT-GRP15-TranspanrentAI_PropertyLens-Group-Report.pdf).
+The final group report PDF is available at [ProjectReport/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_PropertyLens-Group-Report.pdf](ProjectReport/IRS-PM-2026-05-03-AIS08PT-GRP15-TransparentAI_PropertyLens-Group-Report.pdf).
 
 ---
 
